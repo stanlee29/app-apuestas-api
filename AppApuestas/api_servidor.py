@@ -1,6 +1,6 @@
 """
 Módulo: api_servidor.py
-Descripción: Backend FastAPI asíncrono conectado a extractor_ganaplay.py (Playwright).
+Descripción: Backend FastAPI sincronizado con extractor_ganaplay.py (ESPN API).
              Incluye menú desplegable de deportes, análisis de EV y ordenamiento cronológico.
              Compatible con Python 3.14 y entornos serverless (Render).
 """
@@ -16,7 +16,7 @@ import uvicorn
 # Importaciones del motor predictivo
 from motor_probabilidades import predecir_partido, cargar_datos, calcular_valor_ev
 
-# Importación de la función asíncrona del nuevo extractor
+# Importación de la función síncrona del extractor actualizado
 from extractor_ganaplay import obtener_cartelera_con_valor
 
 # ==============================================================================
@@ -32,9 +32,9 @@ class DeporteEnum(str, Enum):
 # 1. CONFIGURACIÓN DE LA APLICACIÓN Y CORS
 # ==============================================================================
 app = FastAPI(
-    title="API Predictor Deportivo Pro (Playwright)",
-    description="Backend para consulta de equipos, predicciones estadísticas y cartelera en tiempo real vía Playwright.",
-    version="3.0.0"
+    title="API Predictor Deportivo Pro",
+    description="Backend para consulta de equipos, predicciones estadísticas y cartelera en tiempo real vía ESPN API.",
+    version="3.1.0"
 )
 
 app.add_middleware(
@@ -49,7 +49,7 @@ app.add_middleware(
 # 2. EVENTO DE INICIO AUTOMÁTICO (STARTUP)
 # ==============================================================================
 @app.on_event("startup")
-async def verificar_y_descargar_datos():
+def verificar_y_descargar_datos():
     """Auto-arranque: descarga datos históricos si no existen en la carpeta /datos."""
     datos_dir = "datos"
     archivos = ["nba_resultados.csv", "nfl_resultados.csv", "mlb_resultados.csv", "futbol_resultados.csv"]
@@ -107,34 +107,28 @@ def predecir_resultado(
     return {"deporte": deporte.value, "partido": f"{local} vs {visitante}", "prediccion": resultado}
 
 
-@app.get("/cartelera/{deporte}", tags=["Cartelera con Valor (Playwright)"])
-async def obtener_cartelera_valor(
+@app.get("/cartelera/{deporte}", tags=["Cartelera con Valor (ESPN)"])
+def obtener_cartelera_valor(
     deporte: DeporteEnum,
     dias: int = Query(default=2, ge=0, le=7, description="Número de días hacia adelante (0 = Hoy, máximo 7)")
 ):
     """
-    Extrae partidos y cuotas REALES de GanaPlay usando Playwright (Hoy + N días), 
+    Extrae partidos y cuotas REALES de ESPN (Hoy + N días), 
     calcula el EV cruzando con el motor y devuelve la lista ordenada cronológicamente.
     """
     try:
-        # Llamada asíncrona a la función de Playwright
-        resultado = await obtener_cartelera_ganaplay(deporte.value, dias=dias)
+        # Llamada síncrona a la función del extractor (ahora basada en requests)
+        resultado = obtener_cartelera_con_valor(deporte.value, dias=dias)
         
         cartelera = resultado.get("cartelera", [])
-        
-        # Ordenamiento cronológico explícito por fecha_hora (del más próximo al más lejano)
-        cartelera_ordenada = sorted(
-            cartelera, 
-            key=lambda x: x.get("fecha_hora", "")
-        )
         
         return {
             "deporte": deporte.value,
             "rango_fechas": resultado.get("rango_fechas", ""),
             "mensaje": resultado.get("mensaje", ""),
-            "total_partidos_analizados": len(cartelera_ordenada),
-            "partidos_con_valor_positivo": sum(1 for p in cartelera_ordenada if p.get("tiene_valor_positivo", False)),
-            "cartelera": cartelera_ordenada
+            "total_partidos_analizados": len(cartelera),
+            "partidos_con_valor_positivo": sum(1 for p in cartelera if p.get("tiene_valor_positivo", False)),
+            "cartelera": cartelera  # Ya viene ordenada cronológicamente desde el extractor
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error crítico al generar la cartelera: {str(e)}")
@@ -164,7 +158,7 @@ def actualizar_datasets():
 
 @app.get("/", tags=["General"])
 def root():
-    return {"mensaje": "API Predictor Deportivo Pro Activa (Playwright)", "documentacion": "/docs", "version": "3.0.0"}
+    return {"mensaje": "API Predictor Deportivo Pro Activa", "documentacion": "/docs", "version": "3.1.0"}
 
 
 # ==============================================================================
