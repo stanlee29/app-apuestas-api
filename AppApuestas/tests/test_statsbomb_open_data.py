@@ -55,6 +55,16 @@ class StatsBombOpenDataTests(unittest.TestCase):
         self.assertAlmostEqual(rates["lambda_home"], 0.6, places=4)
         self.assertAlmostEqual(rates["lambda_away"], 0.3, places=4)
 
+    def test_matches_before_date_excludes_same_day_and_future(self):
+        matches = [
+            {"match_id": 1, "match_date": "2025-04-01", "home_score": 1, "away_score": 0},
+            {"match_id": 2, "match_date": "2025-04-02", "home_score": 2, "away_score": 1},
+            {"match_id": 3, "match_date": "2025-04-03", "home_score": None, "away_score": None},
+            {"match_id": 4, "match_date": "2025-04-04", "home_score": 0, "away_score": 0},
+        ]
+        result = StatsBombOpenData.matches_before_date(matches, "2025-04-03")
+        self.assertEqual([item["match_id"] for item in result], [1, 2])
+
     def test_extracts_shots_xg_h2h_and_heatmaps(self):
         match = {
             "match_id": 100,
@@ -103,7 +113,7 @@ class StatsBombOpenDataTests(unittest.TestCase):
                 previous = dict(match)
                 previous.update({
                     "match_id": 99,
-                    "match_date": "2024-12-01",
+                    "match_date": "2025-04-30",
                     "home_score": 0,
                     "away_score": 2,
                 })
