@@ -22,7 +22,7 @@ El conector utiliza la API v2 de SportsGameOdds:
 - Ligas publicadas en ese nivel: NFL, NBA, MLB, NHL, College Football, College Basketball, Champions League y MLS.
 - La página de alta indica que se solicita tarjeta al registrarse, pero que el plan gratuito no se cobra salvo que se actualice.
 
-La cobertura no equivale a GanaPlay ni a todas las ligas de fútbol. La disponibilidad efectiva debe confirmarse con la cuenta del proveedor. Nunca se etiqueta una cuota de otra casa como cuota de GanaPlay.
+La cobertura gratuita se limita a las ligas enumeradas; no representa toda la cartelera mundial. La disponibilidad efectiva debe confirmarse con la cuenta del proveedor. Cada cuota conserva el nombre de la casa que la publica.
 
 Referencias oficiales:
 - https://sportsgameodds.com/pricing
@@ -67,7 +67,7 @@ Abrir http://127.0.0.1:8000 y http://127.0.0.1:8000/docs.
 
 ## Límites operativos
 
-La aplicación móvil puede consultar el backend mientras está abierta. La caché reduce solicitudes repetidas, pero esto no es un recolector permanente 24/7. Un servicio gratuito puede suspenderse y su disco local no debe usarse como histórico persistente. Para almacenar capturas de cuotas y recopilar con la app cerrada se requiere base de datos y un proceso programado/worker con disponibilidad adecuada.
+La aplicación consulta al abrir la cartelera o cuando el usuario pulsa actualizar. No se programa sondeo automático en el nivel gratuito para proteger el límite de 2.500 objetos al mes. La caché del servidor evita repetir una consulta durante 10 minutos. Esto no es un recolector permanente 24/7. Un servicio gratuito puede suspenderse y su disco local no debe usarse como histórico persistente. Para almacenar capturas de cuotas y recopilar con la app cerrada se requiere base de datos y un proceso programado/worker con disponibilidad adecuada.
 
 ## Modelo estadístico
 
