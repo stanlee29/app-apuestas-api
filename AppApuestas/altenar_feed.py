@@ -88,6 +88,16 @@ def _first(obj: dict[str, Any], keys: tuple[str, ...], default: Any = None) -> A
     return default
 
 
+def _to_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    if isinstance(value, str):
+        return value.strip().casefold() in {"1", "true", "yes", "y", "live"}
+    return False
+
+
 def _xml_to_value(element: ET.Element) -> Any:
     children = list(element)
     if not children:
@@ -144,7 +154,7 @@ def _looks_like_event(item: dict[str, Any]) -> bool:
 def _event_list(payload: Any) -> list[dict[str, Any]]:
     items = _extract_list(
         payload,
-        ("events", "eventlist", "eventdata", "items", "result", "data", "response"),
+        ("events", "event", "eventlist", "eventdata", "items", "result", "data", "response"),
     )
     if items:
         return items
@@ -199,7 +209,7 @@ def normalize_event(item: dict[str, Any], is_live: bool = False) -> dict[str, An
 def _market_items(payload: Any) -> list[dict[str, Any]]:
     items = _extract_list(
         payload,
-        ("markets", "marketlist", "eventmarkets", "marketdata", "items", "result", "data", "response"),
+        ("markets", "market", "marketlist", "eventmarkets", "marketdata", "items", "result", "data", "response"),
     )
     if items:
         return items
@@ -212,7 +222,7 @@ def _market_items(payload: Any) -> list[dict[str, Any]]:
 def _selection_items(market: dict[str, Any]) -> list[dict[str, Any]]:
     return _extract_list(
         market,
-        ("selections", "outcomes", "odds", "items", "betoffers", "marketselections", "runners"),
+        ("selections", "selection", "outcomes", "outcome", "odds", "items", "betoffers", "marketselections", "runners"),
     )
 
 
@@ -248,7 +258,7 @@ def normalize_market(item: dict[str, Any]) -> dict[str, Any]:
         "tipo_id": _first(item, ("MarketType", "MarketTypeId", "TypeId", "marketType")),
         "linea": _first(item, ("Spec", "spec", "Line", "line", "Handicap", "handicap")),
         "estado": _first(item, ("MarketStatus", "Status", "status")),
-        "en_vivo": bool(_first(item, ("IsLive", "isLive", "Live"), False)),
+        "en_vivo": _to_bool(_first(item, ("IsLive", "isLive", "Live"), False)),
         "selecciones": selections,
         "raw": item,
     }
