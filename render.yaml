@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: edgebet-app
+    name: app-apuestas-api
     runtime: python
     plan: free
     rootDir: AppApuestas
