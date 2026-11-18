@@ -1,8 +1,8 @@
 {
   "id": "/",
-  "name": "EdgeBet Sports Research",
-  "short_name": "EdgeBet",
-  "description": "Análisis deportivo y probabilidades estimadas.",
+  "name": "AppApuestas",
+  "short_name": "Apuestas",
+  "description": "Consulta de eventos, mercados y cuotas deportivas.",
   "lang": "es",
   "start_url": "/",
   "scope": "/",
