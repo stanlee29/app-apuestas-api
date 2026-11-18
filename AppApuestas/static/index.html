@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0b101a">
-  <meta name="description" content="EdgeBet: análisis estadístico de eventos deportivos y probabilidades estimadas.">
-  <title>EdgeBet | Sports Research</title>
+  <meta name="description" content="AppApuestas: análisis estadístico de eventos deportivos y probabilidades estimadas.">
+  <title>AppApuestas | Sports Research</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/static/styles.css">
@@ -14,9 +14,9 @@
 <body>
   <div class="app-frame">
     <aside class="sidebar">
-      <a class="brand" href="/" aria-label="EdgeBet inicio">
+      <a class="brand" href="/" aria-label="AppApuestas inicio">
         <span class="brand-mark">E</span>
-        <span class="brand-copy"><strong>EDGE<span>/</span>BET</strong><small>SPORTS RESEARCH</small></span>
+        <span class="brand-copy"><strong>APP<span>/</span>APUESTAS</strong><small>ANÁLISIS DEPORTIVO</small></span>
       </a>
 
       <div class="side-label">DEPORTES</div>
@@ -41,9 +41,9 @@
       <div class="sidebar-spacer"></div>
       <div class="source-box">
         <span class="source-dot"></span>
-        <div><strong>Fuente de eventos</strong><small>ESPN Scoreboard</small></div>
+        <div><strong>Fuente de eventos</strong><small>SportsGameOdds</small></div>
       </div>
-      <div class="sidebar-footer">EDGE / BET <span>•</span> MVP 0.1</div>
+      <div class="sidebar-footer">APP APUESTAS <span>•</span> MVP 0.1</div>
     </aside>
 
     <main class="main-content">
@@ -79,7 +79,7 @@
         <article class="metric-card">
           <div class="metric-top"><span>CON CUOTAS</span><span class="metric-symbol">⌁</span></div>
           <div class="metric-value" id="metric-odds">—</div>
-          <div class="metric-note">Precios publicados por ESPN</div>
+          <div class="metric-note">Precios de las casas disponibles</div>
         </article>
         <article class="metric-card metric-highlight">
           <div class="metric-top"><span>EV POSITIVO</span><span class="metric-symbol">↗</span></div>
@@ -100,6 +100,13 @@
       </section>
 
       <div class="notice" id="notice" hidden role="status"></div>
+      <dialog id="market-dialog" class="market-dialog">
+        <div class="market-dialog-head">
+          <div><div class="section-kicker">DETALLE DE EVENTO</div><h2 id="market-title">Mercados</h2></div>
+          <button class="icon-button" id="market-close" type="button" aria-label="Cerrar">×</button>
+        </div>
+        <div id="market-content" class="market-content"></div>
+      </dialog>
       <section class="events-grid" id="events-list" aria-live="polite" aria-busy="true">
         <article class="loading-card"><span class="loader"></span><strong>Consultando cartelera</strong><small>Conectando con la API deportiva...</small></article>
       </section>
@@ -112,7 +119,7 @@
         </div>
       </section>
 
-      <footer class="page-footer"><span>EDGE/BET RESEARCH ENGINE</span><span>Zona horaria: El Salvador (UTC−6)</span><span>Datos de eventos: ESPN</span></footer>
+      <footer class="page-footer"><span>APP APUESTAS</span><span>Zona horaria: El Salvador (UTC−6)</span><span>Eventos y cuotas: SportsGameOdds</span></footer>
     </main>
   </div>
 </body>
