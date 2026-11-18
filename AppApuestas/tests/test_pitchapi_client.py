@@ -43,10 +43,11 @@ class PitchAPITests(unittest.TestCase):
                     }],
                 }],
             },
-            "/matches/m_B8x2K9/players": {"players": [{"id": "p_1", "name": "Player"}]},
+            "/matches/m_B8x2K9/players": [{"player": {"id": "p_1", "name": "Player"}, "team_id": "t_home", "stats": []}],
             "/matches/m_B8x2K9/h2h": {"recent_matches": []},
             "/matches/m_B8x2K9/heatmaps": {"grid": {"length": 16, "width": 12}, "teams": [], "players": []},
             "/matches/m_B8x2K9/advanced": {"teams": []},
+            "/matches/m_B8x2K9/advanced/players": [{"player": {"id": "p_1", "name": "Player"}, "team_id": "t_home"}],
             "/matches/m_B8x2K9/events": {"events": []},
             "/matches/m_B8x2K9/momentum": {"points": []},
         }
@@ -63,6 +64,8 @@ class PitchAPITests(unittest.TestCase):
         self.assertEqual(result["metricas_calculadas_desde_remates"]["visitante"]["remates"], 1)
         self.assertEqual(result["estadisticas_equipo"][0]["key"], "total_shots")
         self.assertTrue(result["disponibilidad"]["mapas_calor"])
+        self.assertEqual(result["estadisticas_jugadores"][0]["player"]["name"], "Player")
+        self.assertEqual(result["analitica_avanzada_jugadores"][0]["player"]["name"], "Player")
 
 
 if __name__ == "__main__":
