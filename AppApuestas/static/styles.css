@@ -246,3 +246,12 @@ h2 { margin: 5px 0 0; font-size: 21px; letter-spacing: -.025em; }
 .research-warning li { margin: 4px 0; font-size: 9px; line-height: 1.5; }
 @media(max-width:1000px) { .research-controls { grid-template-columns: repeat(2,minmax(0,1fr)); } }
 @media(max-width:700px) { .research-provider-tag { display:none; } .research-controls { grid-template-columns:1fr; padding:11px; } .research-wide { grid-column:auto; } .research-actions { display:grid; grid-template-columns:1fr; } .research-summary-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+
+/* Heatmaps de Research Engine */
+.research-heatmaps { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+.research-heat-card { min-width:0; padding:11px; border:1px solid #29394e; border-radius:8px; background:#0d1724; }
+.research-heat-card strong { display:block; margin-bottom:8px; color:#cfdae6; font-size:10px; }
+.research-heat-grid { display:grid; grid-template-columns:repeat(12,minmax(0,1fr)); gap:2px; aspect-ratio:3/2; padding:3px; border:1px solid #33465a; border-radius:5px; background:#142a35; }
+.research-heat-cell { min-width:0; min-height:0; border-radius:2px; background:rgba(91,221,191,var(--heat,.07)); }
+.research-heat-card small { display:block; margin-top:7px; color:#7e90a6; font-size:8px; }
+@media(max-width:700px) { .research-heatmaps { grid-template-columns:1fr; } }

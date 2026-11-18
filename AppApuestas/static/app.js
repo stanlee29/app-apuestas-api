@@ -489,12 +489,33 @@
     return html;
   }
 
+  function researchHeatmapCard(item, subtitle) {
+    const cells = Array.isArray(item.cells) ? item.cells : [];
+    const counts = Array(96).fill(0);
+    let max = 0;
+    cells.forEach(cell => {
+      if (!Array.isArray(cell) || cell.length < 3) return;
+      const x = Number(cell[0]), y = Number(cell[1]), count = Number(cell[2]);
+      if (!Number.isInteger(x) || !Number.isInteger(y) || x < 0 || x > 11 || y < 0 || y > 7) return;
+      counts[y * 12 + x] = count;
+      max = Math.max(max,count);
+    });
+    const grid = counts.map(count => {
+      const opacity = max ? Math.max(0.07,count/max) : 0.07;
+      return '<span class="research-heat-cell" title="Eventos: ' + count +
+        '" style="--heat:' + opacity.toFixed(2) + '"></span>';
+    }).join("");
+    return '<div class="research-heat-card"><strong>' + escapeHtml(subtitle || item.team || item.player || "Actividad") +
+      '</strong><div class="research-heat-grid">' + grid + '</div><small>' +
+      escapeHtml(item.actions || 0) + ' eventos con coordenadas</small></div>';
+  }
+
   async function researchAnalyse() {
     const match = researchState.selectedMatch;
-    if (!match) { researchStatus("Selecciona un partido histórico primero.", true); return; }
+    if (!match) { researchStatus("Selecciona un partido histórico primero.",true); return; }
     const button = $("research-analysis"), previous = button.textContent;
     button.disabled = true; button.textContent = "Analizando…";
-    researchStatus("Consultando xG, remates y estadísticas del partido…");
+    researchStatus("Consultando xG, remates, eventos, H2H y mapas de actividad…");
     try {
       const query = new URLSearchParams({
         competition_id:$("research-competition").value,
@@ -502,15 +523,60 @@
       });
       const data = await researchGet("/api/v1/research/statsbomb/matches/" +
         encodeURIComponent(match.match_id) + "/analysis?" + query.toString());
-      const m = data.metricas || {}, h = m.local || {}, a = m.visitante || {};
-      const rows = [["xG",h.xg,a.xg],["Remates",h.remates,a.remates],
-        ["Remates a puerta",h.remates_a_puerta,a.remates_a_puerta]];
-      $("research-output").innerHTML = researchCard("Estadísticas históricas",
-        researchTable(["Métrica","Local","Visitante"],rows) +
-        '<p class="research-muted">Fuente: StatsBomb Open Data. Datos históricos seleccionados; atribución requerida al publicar análisis derivados.</p>');
-      researchStatus("Análisis del partido cargado. No representa tracking continuo de jugadores.");
+      const metrics = data.metricas || {};
+      const home = metrics.local || {}, away = metrics.visitante || {};
+      const homeName = researchName(match.home_team) || String(match.home_team_name || "Local");
+      const awayName = researchName(match.away_team) || String(match.away_team_name || "Visitante");
+      const corners = metrics.corners || {}, fouls = metrics.faltas || {}, cards = metrics.tarjetas || {};
+      const homeCards = cards[homeName] || {}, awayCards = cards[awayName] || {};
+      const rows = [
+        ["Goles",home.goles,away.goles],
+        ["xG",home.xg,away.xg],
+        ["Remates",home.remates,away.remates],
+        ["Remates a puerta",home.remates_a_puerta,away.remates_a_puerta],
+        ["Córners",corners[homeName] || 0,corners[awayName] || 0],
+        ["Faltas",fouls[homeName] || 0,fouls[awayName] || 0],
+        ["Tarjetas amarillas",homeCards.yellow || 0,awayCards.yellow || 0],
+        ["Tarjetas rojas",homeCards.red || 0,awayCards.red || 0]
+      ];
+      const h2h = (data.h2h_misma_competicion_temporada || []).map(item => [
+        item.date || "—",
+        item.home || "—",
+        String(item.score_home ?? "—") + "-" + String(item.score_away ?? "—"),
+        item.away || "—"
+      ]);
+      const shots = (data.remates || []).slice().sort((a,b) => Number(b.xg || 0)-Number(a.xg || 0)).slice(0,12)
+        .map(item => [
+          item.team || "—",item.player || "—",
+          item.minute == null ? "—" : String(item.minute) + "'",
+          item.xg == null ? "—" : Number(item.xg).toFixed(3),
+          item.outcome || "—"
+        ]);
+      const teamMaps = (data.mapas_calor?.teams || []).map(item => researchHeatmapCard(item,item.team));
+      const playerMaps = (data.mapas_calor?.players || []).slice(0,6)
+        .map(item => researchHeatmapCard(item,(item.player || "Jugador") + " · " + (item.team || "")));
+      let html = researchCard("Comparativa del partido · " + homeName + " vs " + awayName,
+        researchTable(["Métrica",homeName,awayName],rows) +
+        '<p class="research-muted">Fuente: StatsBomb Open Data · ' + escapeHtml(data.total_eventos || 0) +
+        ' eventos procesados · ' + escapeHtml(data.total_remates || 0) +
+        ' remates detectados.</p>');
+      html += researchCard("Mapas de actividad por equipo",
+        '<div class="research-heatmaps">' + (teamMaps.join("") || '<p class="research-muted">No hay coordenadas disponibles.</p>') +
+        '</div><p class="research-muted">' +
+        escapeHtml(data.mapas_calor?.coordinate_system || "Coordenadas StatsBomb 120×80") +
+        '. Son eventos registrados, no seguimiento continuo ni posición exacta de cada jugador durante todo el partido.</p>');
+      if (playerMaps.length) {
+        html += researchCard("Mapas de actividad individual",'<div class="research-heatmaps">' + playerMaps.join("") + "</div>");
+      }
+      html += researchCard("Remates con mayor xG",
+        researchTable(["Equipo","Jugador","Minuto","xG","Resultado"],shots));
+      html += researchCard("H2H anterior en esta competición",
+        h2h.length ? researchTable(["Fecha","Local","Marcador","Visitante"],h2h) :
+        '<p class="research-muted">No hay enfrentamientos previos en esta misma competición y temporada.</p>');
+      $("research-output").innerHTML = html;
+      researchStatus("Análisis histórico cargado. Atribución a StatsBomb requerida al publicar los datos.");
     } catch (error) {
-      researchStatus("No se pudo analizar el partido: " + error.message, true);
+      researchStatus("No se pudo analizar: " + error.message,true);
     } finally {
       button.disabled = false; button.textContent = previous;
     }
