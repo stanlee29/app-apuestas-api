@@ -14,6 +14,47 @@ class StatsBombOpenDataTests(unittest.TestCase):
         self.assertIsNone(StatsBombOpenData._event_location({"location": [121, 40]}))
         self.assertIsNone(StatsBombOpenData._event_location({"location": "invalid"}))
 
+    def test_builds_recent_home_and_away_xg_rates(self):
+        matches = []
+        for index in range(3):
+            matches.append({
+                "match_id": 200 + index,
+                "match_status": "available",
+                "match_date": f"2025-06-0{index + 1}",
+                "home_team": {"id": 1, "name": "Arsenal"},
+                "away_team": {"id": 10 + index, "name": f"Opponent {index}"},
+                "home_score": 2,
+                "away_score": 1,
+            })
+            matches.append({
+                "match_id": 210 + index,
+                "match_status": "available",
+                "match_date": f"2025-06-1{index + 1}",
+                "home_team": {"id": 20 + index, "name": f"Opponent Away {index}"},
+                "away_team": {"id": 2, "name": "Chelsea"},
+                "home_score": 1,
+                "away_score": 1,
+            })
+
+        client = StatsBombOpenData()
+        def fake_json(path, ttl=0):
+            match_id = int(path.split("/")[1].split(".")[0])
+            match = next(item for item in matches if item["match_id"] == match_id)
+            home, away = match["home_team"]["name"], match["away_team"]["name"]
+            return [
+                {"type": {"name": "Shot"}, "team": {"name": home}, "shot": {"statsbomb_xg": 0.6}},
+                {"type": {"name": "Shot"}, "team": {"name": away}, "shot": {"statsbomb_xg": 0.3}},
+            ]
+
+        with patch.object(client, "_json", side_effect=fake_json):
+            rates = client.recent_team_xg(matches, "Arsenal", "Chelsea")
+
+        self.assertIsNotNone(rates)
+        self.assertEqual(rates["home_matches_with_xg"], 3)
+        self.assertEqual(rates["away_matches_with_xg"], 3)
+        self.assertAlmostEqual(rates["lambda_home"], 0.6, places=4)
+        self.assertAlmostEqual(rates["lambda_away"], 0.3, places=4)
+
     def test_extracts_shots_xg_h2h_and_heatmaps(self):
         match = {
             "match_id": 100,
