@@ -1,8 +1,8 @@
 """
 Módulo: api_servidor.py
-Descripción: Backend FastAPI con menú desplegable de deportes, análisis de EV,
-             consulta de partidos futuros (Hoy + N días) y auto-arranque.
-             Compatible con Python 3.14.
+Descripción: Backend FastAPI asíncrono conectado a extractor_ganaplay.py (Playwright).
+             Incluye menú desplegable de deportes, análisis de EV y ordenamiento cronológico.
+             Compatible con Python 3.14 y entornos serverless (Render).
 """
 
 import os
@@ -13,8 +13,11 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
+# Importaciones del motor predictivo
 from motor_probabilidades import predecir_partido, cargar_datos, calcular_valor_ev
-from extractor_ganaplay import obtener_cartelera_con_valor
+
+# Importación de la función asíncrona del nuevo extractor
+from extractor_ganaplay import obtener_cartelera_ganaplay
 
 # ==============================================================================
 # ENUM PARA MENÚ DESPLEGABLE EN /docs
@@ -29,9 +32,9 @@ class DeporteEnum(str, Enum):
 # 1. CONFIGURACIÓN DE LA APLICACIÓN Y CORS
 # ==============================================================================
 app = FastAPI(
-    title="API Predictor Deportivo Pro",
-    description="Backend para consulta de equipos, predicciones estadísticas, análisis de EV y cartelera de partidos futuros.",
-    version="2.2.0"
+    title="API Predictor Deportivo Pro (Playwright)",
+    description="Backend para consulta de equipos, predicciones estadísticas y cartelera en tiempo real vía Playwright.",
+    version="3.0.0"
 )
 
 app.add_middleware(
@@ -46,7 +49,7 @@ app.add_middleware(
 # 2. EVENTO DE INICIO AUTOMÁTICO (STARTUP)
 # ==============================================================================
 @app.on_event("startup")
-def verificar_y_descargar_datos():
+async def verificar_y_descargar_datos():
     """Auto-arranque: descarga datos históricos si no existen en la carpeta /datos."""
     datos_dir = "datos"
     archivos = ["nba_resultados.csv", "nfl_resultados.csv", "mlb_resultados.csv", "futbol_resultados.csv"]
@@ -104,29 +107,36 @@ def predecir_resultado(
     return {"deporte": deporte.value, "partido": f"{local} vs {visitante}", "prediccion": resultado}
 
 
-@app.get("/cartelera/{deporte}", tags=["Cartelera con Valor"])
-def obtener_cartelera_valor(
+@app.get("/cartelera/{deporte}", tags=["Cartelera con Valor (Playwright)"])
+async def obtener_cartelera_valor(
     deporte: DeporteEnum,
-    dias: int = Query(default=2, ge=1, le=14, description="Número de días hacia adelante a consultar (1 a 14)")
+    dias: int = Query(default=2, ge=0, le=7, description="Número de días hacia adelante (0 = Hoy, máximo 7)")
 ):
     """
-    Extrae partidos y cuotas desde HOY hasta HOY + N días, calcula el EV
-    cruzando con el motor y devuelve la lista ordenada de mayor a menor Valor Esperado.
-    Si el deporte está en pausa, devuelve lista vacía con mensaje informativo (NO error 500).
+    Extrae partidos y cuotas REALES de GanaPlay usando Playwright (Hoy + N días), 
+    calcula el EV cruzando con el motor y devuelve la lista ordenada cronológicamente.
     """
     try:
-        resultado = obtener_cartelera_con_valor(deporte.value, dias=dias)
-
+        # Llamada asíncrona a la función de Playwright
+        resultado = await obtener_cartelera_ganaplay(deporte.value, dias=dias)
+        
+        cartelera = resultado.get("cartelera", [])
+        
+        # Ordenamiento cronológico explícito por fecha_hora (del más próximo al más lejano)
+        cartelera_ordenada = sorted(
+            cartelera, 
+            key=lambda x: x.get("fecha_hora", "")
+        )
+        
         return {
             "deporte": deporte.value,
             "rango_fechas": resultado.get("rango_fechas", ""),
             "mensaje": resultado.get("mensaje", ""),
-            "total_partidos_analizados": len(resultado.get("cartelera", [])),
-            "partidos_con_valor_positivo": sum(1 for p in resultado.get("cartelera", []) if p.get("tiene_valor_positivo", False)),
-            "cartelera": resultado.get("cartelera", [])
+            "total_partidos_analizados": len(cartelera_ordenada),
+            "partidos_con_valor_positivo": sum(1 for p in cartelera_ordenada if p.get("tiene_valor_positivo", False)),
+            "cartelera": cartelera_ordenada
         }
     except Exception as e:
-        # Nunca devolver 500 por falta de partidos; solo por errores críticos
         raise HTTPException(status_code=500, detail=f"Error crítico al generar la cartelera: {str(e)}")
 
 
@@ -154,7 +164,7 @@ def actualizar_datasets():
 
 @app.get("/", tags=["General"])
 def root():
-    return {"mensaje": "API Predictor Deportivo Pro Activa", "documentacion": "/docs", "version": "2.2.0"}
+    return {"mensaje": "API Predictor Deportivo Pro Activa (Playwright)", "documentacion": "/docs", "version": "3.0.0"}
 
 
 # ==============================================================================
