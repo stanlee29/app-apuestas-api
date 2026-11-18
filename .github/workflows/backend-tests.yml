@@ -1,0 +1,28 @@
+name: Backend tests
+
+on:
+  push:
+    paths:
+      - "AppApuestas/**"
+      - ".github/workflows/backend-tests.yml"
+  pull_request:
+    paths:
+      - "AppApuestas/**"
+      - ".github/workflows/backend-tests.yml"
+
+jobs:
+  unittest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+        working-directory: AppApuestas
+      - name: Run unit tests
+        run: python -m unittest discover -s tests -v
+        working-directory: AppApuestas

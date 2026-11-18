@@ -26,12 +26,13 @@ from sports_game_odds import (
 from integraciones_pitchapi import PitchAPIClient, PitchAPIError, pitchapi_status
 from statsbomb_open_data import StatsBombOpenData, StatsBombDataError, statsbomb_status
 from modelos_futbol import predict_from_matches, evaluate_walk_forward
+from modelos_mercados_statsbomb import predict_match_markets
 
 BASE_DIR = Path(__file__).resolve().parent
 DATOS_DIR = BASE_DIR / "datos"
 STATIC_DIR = BASE_DIR / "static"
 INDEX_FILE = STATIC_DIR / "index.html"
-VERSION = "1.0.8"
+VERSION = "1.0.9"
 EVENT_CACHE_SECONDS = max(60, int(os.getenv("SPORTSGAMEODDS_CACHE_SECONDS", "600")))
 MARKET_CACHE_SECONDS = max(60, int(os.getenv("SPORTSGAMEODDS_MARKET_CACHE_SECONDS", "600")))
 
@@ -415,6 +416,36 @@ def research_statsbomb_predict(
     result["temporada_id"] = season_id
     result["fecha_objetivo"] = fecha_partido.isoformat()
     result["regla_temporal"] = "Solo resultados anteriores al día del partido; el día objetivo queda excluido."
+    return result
+
+
+@app.get("/api/v1/research/statsbomb/markets-predict", tags=["Modelos"])
+def research_statsbomb_markets_predict(
+    competition_id: int = Query(..., ge=1),
+    season_id: int = Query(..., ge=1),
+    fecha_partido: date = Query(..., description="Fecha YYYY-MM-DD del partido objetivo"),
+    local: str = Query(..., min_length=1, max_length=100),
+    visitante: str = Query(..., min_length=1, max_length=100),
+    ventana: int = Query(default=8, ge=4, le=12),
+):
+    """Estima probabilidades de remates, tiros a puerta, córners, faltas y tarjetas."""
+    try:
+        statsbomb = StatsBombOpenData()
+        all_matches = statsbomb.matches(competition_id, season_id)
+        result = predict_match_markets(
+            statsbomb,
+            all_matches,
+            fecha_partido.isoformat(),
+            local.strip(),
+            visitante.strip(),
+            limit=ventana,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except StatsBombDataError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    result["competicion_id"] = competition_id
+    result["temporada_id"] = season_id
     return result
 
 
