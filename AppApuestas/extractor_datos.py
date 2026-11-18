@@ -20,7 +20,7 @@ inicio_temporada_nba = hoy.year if hoy.month >= 10 else hoy.year - 1
 NBA_SEASON = f"{inicio_temporada_nba}-{str(inicio_temporada_nba + 1)[-2:]}"
 
 HEADERS_ESPN = {
-    "User-Agent": "EdgeBet research app/0.1 (public ESPN scoreboard client)",
+    "User-Agent": "AppApuestas historical data client/1.0",
     "Accept": "application/json",
 }
 COLUMNAS_ESTANDAR = [
