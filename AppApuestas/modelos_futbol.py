@@ -74,6 +74,7 @@ def predict_from_matches(
     rho: float = -0.08,
     half_life_days: float = 180.0,
     prior_games: float = 5.0,
+    xg_rates: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     if not home_team_name.strip() or not away_team_name.strip():
         raise ValueError("Debes indicar los dos equipos.")
@@ -132,8 +133,24 @@ def predict_from_matches(
     defence_home_factor = home_conceded / league_away
     attack_away_factor = away_attack / league_away
     defence_away_factor = away_conceded / league_home
-    lambda_home = max(0.05, min(5.5, league_home * attack_home_factor * defence_away_factor))
-    lambda_away = max(0.05, min(5.5, league_away * attack_away_factor * defence_home_factor))
+    lambda_home_score = max(0.05, min(5.5, league_home * attack_home_factor * defence_away_factor))
+    lambda_away_score = max(0.05, min(5.5, league_away * attack_away_factor * defence_home_factor))
+    lambda_home, lambda_away = lambda_home_score, lambda_away_score
+    xg_used = False
+    if isinstance(xg_rates, dict):
+        try:
+            xg_home = float(xg_rates["lambda_home"])
+            xg_away = float(xg_rates["lambda_away"])
+            xg_home_n = int(xg_rates.get("home_matches_with_xg", 0))
+            xg_away_n = int(xg_rates.get("away_matches_with_xg", 0))
+            if xg_home > 0 and xg_away > 0 and xg_home_n >= 3 and xg_away_n >= 3:
+                # Al contar con tres o más partidos de cada condición, combina
+                # la señal de xG (65%) con las tasas de goles reales (35%).
+                lambda_home = max(0.05, min(5.5, 0.65 * xg_home + 0.35 * lambda_home_score))
+                lambda_away = max(0.05, min(5.5, 0.65 * xg_away + 0.35 * lambda_away_score))
+                xg_used = True
+        except (KeyError, TypeError, ValueError):
+            xg_used = False
 
     matrix: list[tuple[int, int, float]] = []
     for home_goals in range(11):
@@ -170,11 +187,15 @@ def predict_from_matches(
 
     quality = "exploratoria"
     warnings = [
-        "Modelo entrenado únicamente con marcadores disponibles de la temporada seleccionada.",
-        "No usa xG, tiros, alineaciones, lesiones, clima ni cuotas.",
+        "Modelo entrenado con los partidos finalizados de la temporada seleccionada.",
         "rho es un parámetro de corrección inicial, no calibrado para esta liga.",
         "Las probabilidades no están validadas fuera de muestra.",
     ]
+    if xg_used:
+        warnings.append("Lambda combina xG reciente de StatsBomb (65%) y tasas de goles reales (35%).")
+    else:
+        warnings.append("No hubo al menos tres partidos xG disponibles para cada condición; se usó el respaldo basado en marcadores.")
+    warnings.append("Todavía no incorpora alineaciones, lesiones, clima, cuotas ni mercados de remates/córners/tarjetas.")
     if home_sample < 4 or away_sample < 4:
         warnings.append("Uno de los equipos tiene menos de cuatro partidos de local/visitante en el histórico.")
     if len(rows) >= 80 and home_sample >= 8 and away_sample >= 8:
@@ -183,8 +204,9 @@ def predict_from_matches(
     percent = lambda value: round(value * 100, 2)
     return {
         "fuente_historica": "StatsBomb Open Data",
-        "modelo": "Poisson independiente con corrección Dixon-Coles",
+        "modelo": "Poisson + corrección Dixon-Coles",
         "estado_validacion": quality,
+        "metodo_tasas_goles": "xG reciente + goles reales" if xg_used else "goles reales con regularización",
         "partido": {"local": home_actual, "visitante": away_actual},
         "muestra": {
             "partidos_finalizados": len(rows),
@@ -197,7 +219,10 @@ def predict_from_matches(
             "local": round(lambda_home, 3),
             "visitante": round(lambda_away, 3),
             "total": round(lambda_home + lambda_away, 3),
+            "base_goles_local": round(lambda_home_score, 3),
+            "base_goles_visitante": round(lambda_away_score, 3),
         },
+        "xg_reciente": xg_rates if xg_used else None,
         "probabilidades_1x2_pct": {
             "local": percent(p_home), "empate": percent(p_draw), "visitante": percent(p_away),
         },
