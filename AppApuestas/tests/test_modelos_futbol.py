@@ -64,6 +64,17 @@ class FootballModelTests(unittest.TestCase):
         self.assertEqual(result["metodo"], "walk-forward cronológico sin datos del día objetivo")
         self.assertTrue(all("fecha" in row for row in result["predicciones"]))
 
+    def test_accepts_statsbomb_home_team_name_fields(self):
+        rows = make_matches()
+        rows = [{
+            **row,
+            "home_team": {"home_team_name": row["home_team"]["name"]},
+            "away_team": {"away_team_name": row["away_team"]["name"]},
+        } for row in rows]
+        result = predict_from_matches(rows, "City FC", "United FC")
+        self.assertEqual(result["partido"]["local"], "City FC")
+        self.assertEqual(result["partido"]["visitante"], "United FC")
+
     def test_rejects_same_team(self):
         with self.assertRaises(ValueError):
             predict_from_matches(make_matches(), "City FC", "City FC")
