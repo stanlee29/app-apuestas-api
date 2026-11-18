@@ -324,7 +324,7 @@ class StatsBombOpenData:
                 except (TypeError, ValueError):
                     xg_value = None
                 team_counts[team]["remates"] += 1
-                if outcome.casefold() == "goal" or "saved" in outcome.casefold():
+                if outcome.casefold() in {"goal", "saved", "saved to post"}:
                     team_counts[team]["remates_a_puerta"] += 1
                 if outcome.casefold() == "goal":
                     team_counts[team]["goles_en_remates"] += 1
