@@ -70,7 +70,7 @@ def convertir_a_utc6(fecha_iso: str) -> tuple[datetime, str]:
             dt = dt.replace(tzinfo=timezone.utc)
         dt_sv = dt.astimezone(TZ_SV)
         return dt_sv, dt_sv.strftime("%Y-%m-%d %H:%M")
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, AttributeError):
         raise ValueError(f"Fecha ESPN inválida: {fecha_iso!r}")
 
 
@@ -107,8 +107,11 @@ def extraer_cuotas(odds_list: Any) -> tuple[dict[str, float | None], str | None]
             continue
         home = item.get("homeTeamOdds") or {}
         away = item.get("awayTeamOdds") or {}
+        if not isinstance(home, dict):
+            home = {}
+        if not isinstance(away, dict):
+            away = {}
         draw = item.get("drawOdds") or item.get("tieOdds") or {}
-
         if isinstance(draw, dict):
             draw_moneyline = draw.get("moneyLine", draw.get("moneyline"))
         else:
@@ -239,18 +242,22 @@ def obtener_cartelera_con_valor(deporte: str, dias: int = 2) -> dict[str, Any]:
         prob_empate = prediccion.get("prob_empate") if modelo_disponible else None
 
         analisis_ev: dict[str, Any] = {}
-        if prob_local is not None and partido["cuotas"]["local"] is not None:
+        cuotas_comparables = (
+            partido["cuotas"]["local"] is not None
+            and partido["cuotas"]["visitante"] is not None
+            and (deporte != "futbol" or partido["cuotas"]["empate"] is not None)
+        )
+        if modelo_disponible and cuotas_comparables:
             analisis_ev["local"] = calcular_valor_ev(prob_local * 100, partido["cuotas"]["local"])
-        if prob_visitante is not None and partido["cuotas"]["visitante"] is not None:
             analisis_ev["visitante"] = calcular_valor_ev(
                 prob_visitante * 100,
                 partido["cuotas"]["visitante"],
             )
-        if prob_empate is not None and partido["cuotas"]["empate"] is not None:
-            analisis_ev["empate"] = calcular_valor_ev(
-                prob_empate * 100,
-                partido["cuotas"]["empate"],
-            )
+            if deporte == "futbol":
+                analisis_ev["empate"] = calcular_valor_ev(
+                    prob_empate * 100,
+                    partido["cuotas"]["empate"],
+                )
 
         cartelera_final.append({
             "evento_id": partido["evento_id"],
