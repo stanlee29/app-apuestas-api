@@ -401,8 +401,10 @@ def research_statsbomb_predict(
     rho: float = Query(default=-0.08, ge=-0.25, le=0.25),
 ):
     try:
-        matches = StatsBombOpenData().matches(competition_id, season_id)
-        result = predict_from_matches(matches, local, visitante, rho=rho)
+        statsbomb = StatsBombOpenData()
+        matches = statsbomb.matches(competition_id, season_id)
+        xg_rates = statsbomb.recent_team_xg(matches, local, visitante, limit=8)
+        result = predict_from_matches(matches, local, visitante, rho=rho, xg_rates=xg_rates)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except StatsBombDataError as exc:
