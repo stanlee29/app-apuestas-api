@@ -406,11 +406,14 @@ class StatsBombOpenData:
             )
 
         h2h = []
+        target_date = _parse_match_date(match.get("match_date"))
         for item in matches:
             item_home = self._team_name(item.get("home_team"))
             item_away = self._team_name(item.get("away_team"))
+            item_date = _parse_match_date(item.get("match_date"))
             has_result = item.get("home_score") is not None and item.get("away_score") is not None
-            if int(item.get("match_id", 0)) != match_id and {item_home, item_away} == team_names and has_result:
+            is_before_target = target_date is not None and item_date is not None and item_date < target_date
+            if int(item.get("match_id", 0)) != match_id and is_before_target and {item_home, item_away} == team_names and has_result:
                 h2h.append({
                     "match_id": item.get("match_id"),
                     "date": item.get("match_date"),
