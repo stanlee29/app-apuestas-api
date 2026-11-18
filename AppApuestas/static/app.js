@@ -16,7 +16,7 @@
       const response=await fetch("/health",{cache:"no-store"});
       if(!response.ok) throw new Error("HTTP "+response.status);
       const health=await response.json();
-      setApiStatus(health.estado==="ok"?"API conectada":"API con alertas","connected");
+      const configured=health.proveedor?.configurado===true; setApiStatus(configured?"Fuente conectada":"Falta clave del proveedor",configured?"connected":"error");
     } catch (_) { setApiStatus("API sin conexión","error"); }
   }
   function formatDateRange(range) {
@@ -31,7 +31,7 @@
   }
   function formatKickoff(value) {
     if(!value) return "Horario no disponible";
-    const date=new Date(String(value).replace(" ","T")+":00-06:00");
+    const raw=String(value); const date=new Date(/[zZ]$|[+-]\\d\\d:\\d\\d$/.test(raw)?raw:raw.replace(" ","T")+"-06:00");
     if(Number.isNaN(date.getTime())) return escapeHtml(value);
     return new Intl.DateTimeFormat("es-SV",{
       weekday:"short",day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit",
@@ -76,7 +76,7 @@
       escapeHtml(event.error_modelo||""),'">',modelAvailable?"Modelo disponible":"Sin histórico compatible",
       '</span><span class="ev-tag ',ev.positive?"positive":"",'" title="',
       escapeHtml(event.fuente_cuotas?"Cuotas: "+event.fuente_cuotas:"Sin cuotas publicadas"),'">',
-      escapeHtml(ev.label),'</span></div></article>'
+      escapeHtml(ev.label),'</span></div><button class="markets-button" type="button" data-markets-id="',escapeHtml(event.evento_id||""),'">Ver mercados (',escapeHtml(event.mercados_disponibles??0),')</button></article>'
     ];
     return html.join("");
   }
@@ -134,7 +134,42 @@
   function selectSport(sport) {
     if(!SPORTS[sport]||state.sport===sport)return;
     state.sport=sport;
-    document.querySelectorAll("[data-sport]").forEach((button)=>{
+  
+  function renderMarket(market) {
+    const selections=Array.isArray(market.selecciones)?market.selecciones:[];
+    const selectionHtml=selections.map((selection)=>{
+      const houses=Array.isArray(selection.casas)?selection.casas:[];
+      const oddsHtml=houses.length?houses.slice(0,6).map((house)=>{
+        const label=escapeHtml(house.casa||house.casa_id||"Casa");
+        const price=Number(house.cuota_decimal);
+        const quote=Number.isFinite(price)?price.toFixed(2):"—";
+        const anchor=house.enlace?'<a href="'+escapeHtml(house.enlace)+'" target="_blank" rel="noopener noreferrer">Abrir casa</a>':"";
+        return '<span class="book-price"><strong>'+quote+'</strong><small>'+label+'</small>'+anchor+'</span>';
+      }).join(""):'<span class="muted-value">Sin precio disponible</span>';
+      return '<div class="selection-row"><div class="selection-name">'+escapeHtml(selection.nombre||selection.lado||"Selección")+'</div><div class="book-prices">'+oddsHtml+'</div></div>';
+    }).join("");
+    return '<article class="market-card"><header><strong>'+escapeHtml(market.nombre||"Mercado")+'</strong><span>'+escapeHtml(market.periodo||"")+(market.linea!=null?' · Línea '+escapeHtml(market.linea):"")+'</span></header>'+selectionHtml+'</article>';
+  }
+  async function loadMarkets(eventId) {
+    const dialog=$("market-dialog"),body=$("market-content"),title=$("market-title");
+    title.textContent="Mercados del evento";
+    body.innerHTML='<div class="market-loading">Consultando precios publicados…</div>';
+    if(typeof dialog.showModal==="function"&&!dialog.open)dialog.showModal();
+    try {
+      const response=await fetch("/api/v1/events/"+encodeURIComponent(eventId)+"/markets",{cache:"no-store"});
+      const payload=await response.json();
+      if(!response.ok)throw new Error(typeof payload.detail==="string"?payload.detail:"Error "+response.status);
+      const markets=Array.isArray(payload.mercados)?payload.mercados:[];
+      title.textContent="Mercados · "+markets.length;
+      body.innerHTML=markets.length?markets.map(renderMarket).join(""):'<div class="market-loading">El proveedor no entregó mercados disponibles para este evento.</div>';
+    } catch(error) {
+      body.innerHTML='<div class="market-loading error-text">'+escapeHtml(error.message)+'</div>';
+    }
+  }
+
+  $("events-list").addEventListener("click",(event)=>{const button=event.target.closest("[data-markets-id]");if(button&&button.dataset.marketsId)loadMarkets(button.dataset.marketsId);});
+  $("market-close").addEventListener("click",()=> $("market-dialog").close());
+  document.querySelectorAll("[data-sport]").forEach((button)=>{
       button.setAttribute("aria-pressed",String(button.dataset.sport===sport));
     });
     loadCartelera();
@@ -153,4 +188,5 @@
   window.addEventListener("appinstalled",()=>{$("install-btn").hidden=true;state.installPrompt=null;});
   if("serviceWorker" in navigator)window.addEventListener("load",()=>navigator.serviceWorker.register("/service-worker.js").catch(()=>{}));
   checkHealth().then(loadCartelera);
+  window.setInterval(()=>{if(!document.hidden)loadCartelera();},600000);
 })();
