@@ -156,3 +156,29 @@ h2 { margin: 5px 0 0; font-size: 21px; letter-spacing: -.025em; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
+
+.markets-button { margin: 0 14px 13px; width: calc(100% - 28px); border: 1px solid #2e6d68; border-radius: 7px; padding: 9px 12px; background: #16302f; color: #b9fff2; font-size: 10px; font-weight: 750; }
+.markets-button:hover { background: #1c4542; }
+.market-dialog { width: min(900px, calc(100vw - 28px)); max-height: min(82vh, 900px); padding: 0; border: 1px solid #2b3b51; border-radius: 13px; background: #0f1826; color: var(--text); }
+.market-dialog::backdrop { background: #02060cbb; backdrop-filter: blur(3px); }
+.market-dialog-head { position: sticky; top: 0; z-index: 2; display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 18px 20px; border-bottom: 1px solid #27364a; background: #101a29; }
+.market-dialog-head h2 { margin: 5px 0 0; font-size: 18px; }
+.market-content { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 10px; padding: 15px; }
+.market-card { min-width: 0; border: 1px solid #2a3a50; border-radius: 9px; background: #131e2d; overflow: hidden; }
+.market-card > header { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding: 11px 12px; border-bottom: 1px solid #2a3a50; }
+.market-card > header strong { font-size: 11px; }
+.market-card > header span { color: #8594a9; font-size: 9px; text-align: right; }
+.selection-row { padding: 10px 12px; border-bottom: 1px solid #253348; }
+.selection-row:last-child { border-bottom: 0; }
+.selection-name { margin-bottom: 7px; color: #d7e2ef; font-size: 10px; font-weight: 700; }
+.book-prices { display: flex; flex-wrap: wrap; gap: 7px; }
+.book-price { display: flex; min-width: 84px; flex-direction: column; gap: 3px; padding: 7px 8px; border: 1px solid #2c3c52; border-radius: 6px; background: #0d1622; }
+.book-price strong { color: var(--accent-2); font-size: 14px; font-variant-numeric: tabular-nums; }
+.book-price small { color: #95a4b8; font-size: 8px; }
+.book-price a { color: #81d8ca; font-size: 8px; text-decoration: none; }
+.market-loading { grid-column: 1 / -1; padding: 35px 15px; color: #9aa9bd; font-size: 12px; text-align: center; }
+.error-text { color: var(--danger); }
+@media (max-width: 720px) {
+  .market-content { grid-template-columns: 1fr; padding: 10px; }
+  .market-dialog-head { padding: 13px 14px; }
+}
