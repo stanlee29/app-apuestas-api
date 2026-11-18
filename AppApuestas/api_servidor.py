@@ -2,7 +2,7 @@
 import os
 import re
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -22,6 +22,8 @@ from sports_game_odds import (
     provider_status,
     EL_SALVADOR_TZ,
 )
+
+from integraciones_pitchapi import PitchAPIClient, PitchAPIError, pitchapi_status
 
 BASE_DIR = Path(__file__).resolve().parent
 DATOS_DIR = BASE_DIR / "datos"
@@ -235,6 +237,106 @@ def api_info():
 @app.get("/api/v1/source/status", tags=["Proveedor"])
 def source_status():
     return provider_status()
+
+
+@app.get("/api/v1/research/status", tags=["Investigación"])
+def research_status():
+    return {
+        "proveedores": {
+            "sports_game_odds": provider_status(),
+            "pitchapi": pitchapi_status(),
+        },
+        "capacidades": {
+            "cartelera_y_cuotas": "SportsGameOdds",
+            "xg_remates_h2h_heatmaps": "PitchAPI (requiere clave gratuita)",
+        },
+    }
+
+
+@app.get("/api/v1/research/football/leagues", tags=["Investigación"])
+def research_football_leagues():
+    try:
+        leagues = PitchAPIClient().list_leagues()
+    except PitchAPIError as exc:
+        raise HTTPException(status_code=exc.status_code, detail={
+            "codigo": exc.code, "mensaje": str(exc)
+        }) from exc
+    return {
+        "fuente": "PitchAPI",
+        "total_ligas": len(leagues),
+        "ligas": leagues,
+    }
+
+
+@app.get("/api/v1/research/football/date/{fecha}", tags=["Investigación"])
+def research_football_date(
+    fecha: str,
+    status: str = Query(default="all", pattern="^(played|upcoming|all)$"),
+):
+    try:
+        date.fromisoformat(fecha)
+        data = PitchAPIClient().matches_by_date(fecha, status=status)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except PitchAPIError as exc:
+        raise HTTPException(status_code=exc.status_code, detail={
+            "codigo": exc.code, "mensaje": str(exc)
+        }) from exc
+    matches = data.get("matches", []) if isinstance(data, dict) else []
+    return {
+        "fuente": "PitchAPI",
+        "fecha": fecha,
+        "estado_consultado": status,
+        "total_eventos": len(matches),
+        "eventos": matches,
+    }
+
+
+@app.get("/api/v1/research/football/leagues/{league_id}/matches", tags=["Investigación"])
+def research_football_league_matches(
+    league_id: str,
+    season: str | None = Query(default=None, max_length=20),
+    status: str = Query(default="all", pattern="^(played|upcoming|all)$"),
+):
+    try:
+        data = PitchAPIClient().league_matches(league_id, season=season, status=status)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except PitchAPIError as exc:
+        raise HTTPException(status_code=exc.status_code, detail={
+            "codigo": exc.code, "mensaje": str(exc)
+        }) from exc
+    matches = data.get("matches", []) if isinstance(data, dict) else []
+    return {
+        "fuente": "PitchAPI",
+        "liga": data.get("league") if isinstance(data, dict) else None,
+        "total_eventos": len(matches),
+        "eventos": matches,
+    }
+
+
+@app.get("/api/v1/research/football/matches/{match_id}/analysis", tags=["Investigación"])
+def research_football_match_analysis(match_id: str):
+    try:
+        return PitchAPIClient().match_analysis(match_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except PitchAPIError as exc:
+        raise HTTPException(status_code=exc.status_code, detail={
+            "codigo": exc.code, "mensaje": str(exc)
+        }) from exc
+
+
+@app.get("/api/v1/research/football/matches/{match_id}/live", tags=["Investigación"])
+def research_football_match_live(match_id: str):
+    try:
+        return PitchAPIClient().match_live(match_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except PitchAPIError as exc:
+        raise HTTPException(status_code=exc.status_code, detail={
+            "codigo": exc.code, "mensaje": str(exc)
+        }) from exc
 
 
 @app.get("/api/v1/sports", tags=["Proveedor"])
