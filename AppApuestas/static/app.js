@@ -31,7 +31,7 @@
   }
   function formatKickoff(value) {
     if(!value) return "Horario no disponible";
-    const raw=String(value); const date=new Date(/[zZ]$|[+-]\\d\\d:\\d\\d$/.test(raw)?raw:raw.replace(" ","T")+"-06:00");
+    const raw=String(value); const date=new Date(/[zZ]$|[+-]\d\d:\d\d$/.test(raw)?raw:raw.replace(" ","T")+"-06:00");
     if(Number.isNaN(date.getTime())) return escapeHtml(value);
     return new Intl.DateTimeFormat("es-SV",{
       weekday:"short",day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit",
