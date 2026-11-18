@@ -241,6 +241,17 @@ class PitchAPIClient:
                         "format_type": item.get("format_type"),
                     })
 
+        player_stats = (
+            players_data if isinstance(players_data, list)
+            else players_data.get("players", []) if isinstance(players_data, dict)
+            else []
+        )
+        advanced_player_stats = (
+            advanced_players_data if isinstance(advanced_players_data, list)
+            else advanced_players_data.get("players", []) if isinstance(advanced_players_data, dict)
+            else []
+        )
+
         return {
             "fuente": "PitchAPI",
             "partido": match,
@@ -251,8 +262,8 @@ class PitchAPIClient:
             "remates": shots,
             "estadisticas_equipo": stats,
             "estadisticas_equipo_raw": stats_data,
-            "estadisticas_jugadores": players_data.get("players", []) if isinstance(players_data, dict) else [],
-            "analitica_avanzada_jugadores": advanced_players_data.get("players", []) if isinstance(advanced_players_data, dict) else [],
+            "estadisticas_jugadores": player_stats,
+            "analitica_avanzada_jugadores": advanced_player_stats,
             "h2h": h2h_data,
             "mapas_calor": heatmaps_data,
             "red_pases": network_data,
