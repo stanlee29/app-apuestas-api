@@ -297,6 +297,7 @@ class SportsGameOddsClient:
             "leagueID": ",".join(league_ids),
             "startsAfter": (now - timedelta(hours=6)).isoformat(timespec="seconds").replace("+00:00", "Z"),
             "startsBefore": (now + timedelta(days=max(1, min(days, 7)))).isoformat(timespec="seconds").replace("+00:00", "Z"),
+            "oddsAvailable": "true",
             "finalized": "false",
             "cancelled": "false",
             "limit": 100,
