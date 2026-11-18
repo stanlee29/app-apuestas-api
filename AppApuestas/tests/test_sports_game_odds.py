@@ -2,11 +2,14 @@ import os
 import unittest
 from unittest.mock import patch
 
+from datetime import datetime, timezone
+
 from sports_game_odds import (
     ProviderConfigurationError,
     ProviderSettings,
     SportsGameOddsClient,
     american_to_decimal,
+    calendar_window,
     normalize_event,
 )
 
@@ -77,6 +80,24 @@ class SportsGameOddsTests(unittest.TestCase):
         self.assertEqual(len(selections), 2)
         self.assertEqual(selections[0]["casas"][0]["cuota_decimal"], 1.9091)
 
+    def test_ventana_dos_dias_incluye_hoy_manana_y_pasado_manana(self):
+        now = datetime(2026, 11, 18, 22, 6, tzinfo=timezone.utc)
+        window = calendar_window(2, now)
+        self.assertEqual(window["fecha_inicio_local"], "2026-11-18")
+        self.assertEqual(window["fecha_fin_local"], "2026-11-20")
+        self.assertEqual(window["dias_incluidos"], 3)
+        self.assertEqual(window["zona_horaria"], "America/El_Salvador")
+        self.assertEqual(window["starts_before"], "2026-11-21T06:00:00Z")
+
+    def test_hoy_usa_el_dia_local_y_no_la_fecha_utc(self):
+        # 02:00 del 18 de noviembre en El Salvador corresponde a 08:00 UTC.
+        now = datetime(2026, 11, 18, 8, 0, tzinfo=timezone.utc)
+        window = calendar_window(0, now)
+        self.assertEqual(window["fecha_inicio_local"], "2026-11-18")
+        self.assertEqual(window["fecha_fin_local"], "2026-11-18")
+        self.assertEqual(window["starts_after"], "2026-11-18T06:00:00Z")
+        self.assertEqual(window["starts_before"], "2026-11-19T06:00:00Z")
+
     def test_clave_obligatoria(self):
         with patch.dict(os.environ, {}, clear=True):
             with self.assertRaises(ProviderConfigurationError):
@@ -95,6 +116,8 @@ class SportsGameOddsTests(unittest.TestCase):
         self.assertEqual(params["leagueID"], "NBA")
         self.assertEqual(params["live"], "true")
         self.assertEqual(params["limit"], 100)
+        self.assertNotIn("oddsAvailable", params)
+        self.assertEqual(result["ventana_consulta"]["dias_incluidos"], 3)
 
 
 if __name__ == "__main__":
