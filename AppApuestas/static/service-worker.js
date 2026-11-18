@@ -1,5 +1,5 @@
 "use strict";
-const CACHE_NAME="app-apuestas-shell-v2";
+const CACHE_NAME="app-apuestas-shell-v3";
 const APP_SHELL=["/","/static/styles.css","/static/app.js","/static/icon.svg","/manifest.webmanifest"];
 
 self.addEventListener("install",(event)=>{
