@@ -24,12 +24,13 @@ from sports_game_odds import (
 )
 
 from integraciones_pitchapi import PitchAPIClient, PitchAPIError, pitchapi_status
+from statsbomb_open_data import StatsBombOpenData, StatsBombDataError, statsbomb_status
 
 BASE_DIR = Path(__file__).resolve().parent
 DATOS_DIR = BASE_DIR / "datos"
 STATIC_DIR = BASE_DIR / "static"
 INDEX_FILE = STATIC_DIR / "index.html"
-VERSION = "1.0.2"
+VERSION = "1.0.3"
 EVENT_CACHE_SECONDS = max(60, int(os.getenv("SPORTSGAMEODDS_CACHE_SECONDS", "600")))
 MARKET_CACHE_SECONDS = max(60, int(os.getenv("SPORTSGAMEODDS_MARKET_CACHE_SECONDS", "600")))
 
@@ -245,6 +246,7 @@ def research_status():
         "proveedores": {
             "sports_game_odds": provider_status(),
             "pitchapi": pitchapi_status(),
+            "statsbomb_open_data": statsbomb_status(),
         },
         "capacidades": {
             "cartelera_y_cuotas": "SportsGameOdds",
@@ -337,6 +339,56 @@ def research_football_match_live(match_id: str):
         raise HTTPException(status_code=exc.status_code, detail={
             "codigo": exc.code, "mensaje": str(exc)
         }) from exc
+
+
+@app.get("/api/v1/research/statsbomb/competitions", tags=["Investigación"])
+def research_statsbomb_competitions():
+    try:
+        competitions = StatsBombOpenData().competitions()
+    except StatsBombDataError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    return {
+        "fuente": "StatsBomb Open Data",
+        "total_competiciones": len(competitions),
+        "competiciones": competitions,
+        "atribucion": "StatsBomb",
+    }
+
+
+@app.get(
+    "/api/v1/research/statsbomb/competitions/{competition_id}/seasons/{season_id}/matches",
+    tags=["Investigación"],
+)
+def research_statsbomb_matches(competition_id: int, season_id: int):
+    try:
+        matches = StatsBombOpenData().matches(competition_id, season_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except StatsBombDataError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    matches.sort(key=lambda item: str(item.get("match_date") or ""), reverse=True)
+    return {
+        "fuente": "StatsBomb Open Data",
+        "competition_id": competition_id,
+        "season_id": season_id,
+        "total_partidos": len(matches),
+        "partidos": matches,
+        "atribucion": "StatsBomb",
+    }
+
+
+@app.get("/api/v1/research/statsbomb/matches/{match_id}/analysis", tags=["Investigación"])
+def research_statsbomb_match_analysis(
+    match_id: int,
+    competition_id: int = Query(..., ge=1),
+    season_id: int = Query(..., ge=1),
+):
+    try:
+        return StatsBombOpenData().match_analysis(match_id, competition_id, season_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except StatsBombDataError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
 
 @app.get("/api/v1/sports", tags=["Proveedor"])
