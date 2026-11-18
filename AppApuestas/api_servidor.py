@@ -1,13 +1,17 @@
 """
-API FastAPI para EdgeBet.
-Sirve la interfaz PWA y expone endpoints de cartelera, equipos y predicciones.
+API FastAPI de EdgeBet.
+La cartelera y los mercados proceden del feed Altenar autorizado por GanaPlay.
+No se consulta ESPN como sustituto ni se generan cuotas artificiales.
 """
 import os
+import re
 import sys
 import subprocess
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from enum import Enum
+from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,13 +20,24 @@ from fastapi.staticfiles import StaticFiles
 import uvicorn
 
 from motor_probabilidades import predecir_partido, cargar_datos, calcular_valor_ev
-from extractor_ganaplay import obtener_cartelera_con_valor
+from altenar_feed import (
+    AltenarFeedClient,
+    FeedConfigurationError,
+    FeedAccessError,
+    FeedResponseError,
+    feed_configuration_status,
+)
 
 BASE_DIR = Path(__file__).resolve().parent
 DATOS_DIR = BASE_DIR / "datos"
 STATIC_DIR = BASE_DIR / "static"
 INDEX_FILE = STATIC_DIR / "index.html"
-VERSION = "0.1.0"
+VERSION = "0.2.0"
+EVENT_CACHE_SECONDS = max(10, int(os.getenv("ALTENAR_EVENTS_CACHE_SECONDS", "30")))
+MARKET_CACHE_SECONDS = max(10, int(os.getenv("ALTENAR_MARKETS_CACHE_SECONDS", "30")))
+
+_event_cache: dict[str, tuple[float, dict[str, Any]]] = {}
+_market_cache: dict[str, tuple[float, dict[str, Any]]] = {}
 
 
 class DeporteEnum(str, Enum):
@@ -34,7 +49,10 @@ class DeporteEnum(str, Enum):
 
 app = FastAPI(
     title="EdgeBet API",
-    description="API de análisis deportivo y probabilidades estimadas. Las cuotas solo se muestran cuando la fuente las proporciona.",
+    description=(
+        "API de investigación deportiva. Eventos y mercados se consultan desde el feed "
+        "Altenar autorizado por GanaPlay. Solo lectura; no acepta ni envía apuestas."
+    ),
     version=VERSION,
 )
 
@@ -49,9 +67,58 @@ app.add_middleware(
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
+def _feed_client() -> AltenarFeedClient:
+    try:
+        return AltenarFeedClient()
+    except (FeedConfigurationError, ValueError) as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+def _feed_http_error(exc: Exception) -> HTTPException:
+    if isinstance(exc, FeedConfigurationError):
+        return HTTPException(status_code=503, detail=str(exc))
+    if isinstance(exc, FeedAccessError):
+        return HTTPException(status_code=502, detail=str(exc))
+    if isinstance(exc, FeedResponseError):
+        return HTTPException(status_code=502, detail=str(exc))
+    return HTTPException(status_code=502, detail=f"Error consultando el feed GanaPlay/Altenar: {exc}")
+
+
+def _get_events_cached(deporte: str) -> dict[str, Any]:
+    now = time.monotonic()
+    cached = _event_cache.get(deporte)
+    if cached and now - cached[0] < EVENT_CACHE_SECONDS:
+        return cached[1]
+
+    try:
+        result = _feed_client().get_events(deporte)
+    except (FeedConfigurationError, FeedAccessError, FeedResponseError) as exc:
+        raise _feed_http_error(exc) from exc
+
+    result["cache_segundos"] = EVENT_CACHE_SECONDS
+    _event_cache[deporte] = (now, result)
+    return result
+
+
+def _get_markets_cached(event_id: str) -> dict[str, Any]:
+    now = time.monotonic()
+    cached = _market_cache.get(event_id)
+    if cached and now - cached[0] < MARKET_CACHE_SECONDS:
+        return cached[1]
+
+    try:
+        result = _feed_client().get_markets(event_id)
+    except (FeedConfigurationError, FeedAccessError, FeedResponseError) as exc:
+        raise _feed_http_error(exc) from exc
+
+    result["cache_segundos"] = MARKET_CACHE_SECONDS
+    _market_cache[event_id] = (now, result)
+    return result
+
+
 @app.on_event("startup")
 def verificar_datos_historicos():
-    """Intenta preparar los CSV si faltan. No genera resultados ficticios."""
+    """Prepara los CSV históricos solo cuando no existen; nunca fabrica resultados."""
     archivos = [
         "nba_resultados.csv",
         "nfl_resultados.csv",
@@ -95,6 +162,8 @@ def health():
         "aplicacion": "EdgeBet",
         "version": VERSION,
         "hora_utc": datetime.now(timezone.utc).isoformat(),
+        "fuente_cartelera": "GanaPlay / Altenar",
+        "feed": feed_configuration_status(),
         "datasets": {nombre: (DATOS_DIR / nombre).exists() for nombre in archivos},
     }
 
@@ -107,6 +176,90 @@ def informacion_api():
         "interfaz": "/",
         "version": VERSION,
         "deportes": [deporte.value for deporte in DeporteEnum],
+        "fuente_de_eventos_y_mercados": "GanaPlay / Altenar",
+    }
+
+
+@app.get("/api/v1/ganaplay/status", tags=["GanaPlay / Altenar"])
+def estado_feed():
+    return feed_configuration_status()
+
+
+@app.get("/api/v1/ganaplay/sports", tags=["GanaPlay / Altenar"])
+def deportes_feed():
+    try:
+        payload = _feed_client().get_sports()
+        return {"fuente": "GanaPlay / Altenar", "catalogo": payload}
+    except (FeedConfigurationError, FeedAccessError, FeedResponseError) as exc:
+        raise _feed_http_error(exc) from exc
+
+
+@app.get("/api/v1/ganaplay/events", tags=["GanaPlay / Altenar"])
+def eventos_ganaplay(
+    deporte: DeporteEnum = Query(...),
+    live: bool | None = Query(default=None, description="Filtrar eventos en vivo o prepartido"),
+):
+    result = _get_events_cached(deporte.value)
+    events = result.get("eventos", [])
+    if live is not None:
+        events = [event for event in events if event.get("en_vivo") is live]
+    return {
+        "fuente": result["fuente"],
+        "deporte": result["deporte"],
+        "sport_id": result["sport_id"],
+        "generado_en": result["generado_en"],
+        "total_eventos": len(events),
+        "eventos_programados": sum(1 for event in events if not event.get("en_vivo")),
+        "eventos_en_vivo": sum(1 for event in events if event.get("en_vivo")),
+        "cache_segundos": result["cache_segundos"],
+        "eventos": events,
+    }
+
+
+@app.get("/api/v1/ganaplay/events/{event_id}/markets", tags=["GanaPlay / Altenar"])
+def mercados_evento(event_id: str):
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,80}", event_id):
+        raise HTTPException(status_code=400, detail="Identificador de evento no válido.")
+    return _get_markets_cached(event_id)
+
+
+@app.get("/cartelera/{deporte}", tags=["Cartelera GanaPlay"])
+def obtener_cartelera_ganaplay(deporte: DeporteEnum):
+    """Alias compatible con la APK actual; ya no consulta ESPN."""
+    result = _get_events_cached(deporte.value)
+    events = result.get("eventos", [])
+    cartelera = []
+    for event in events:
+        cartelera.append({
+            "evento_id": event.get("evento_id"),
+            "deporte": deporte.value,
+            "liga": event.get("liga") or event.get("categoria") or "",
+            "fecha_hora": event.get("fecha_hora") or "",
+            "local": event.get("local") or event.get("nombre_evento") or "Evento",
+            "visitante": event.get("visitante") or "",
+            "estado_evento": event.get("estado_evento"),
+            "fuente_eventos": "GanaPlay / Altenar",
+            "fuente_cuotas": "GanaPlay / Altenar",
+            "cuotas": {"local": None, "empate": None, "visitante": None},
+            "probabilidades_modelo": {"local": None, "empate": None, "visitante": None},
+            "modelo_disponible": False,
+            "mercados_disponibles": None,
+            "tiene_valor_positivo": False,
+        })
+
+    return {
+        "deporte": deporte.value,
+        "fuente": result["fuente"],
+        "rango_fechas": datetime.now().strftime("%Y%m%d"),
+        "mensaje": (
+            "Cartelera recibida del feed GanaPlay/Altenar. "
+            "Abre un evento para consultar sus mercados y cuotas."
+        ),
+        "total_partidos_analizados": len(cartelera),
+        "total_con_probabilidades": 0,
+        "total_con_cuotas": 0,
+        "partidos_con_valor_positivo": 0,
+        "cartelera": cartelera,
     }
 
 
@@ -154,34 +307,6 @@ def predecir_resultado(
         "partido": f"{local.strip()} vs {visitante.strip()}",
         "prediccion": resultado,
     }
-
-
-@app.get("/cartelera/{deporte}", tags=["Cartelera ESPN"])
-def obtener_cartelera_valor(
-    deporte: DeporteEnum,
-    dias: int = Query(default=2, ge=0, le=7),
-):
-    try:
-        resultado = obtener_cartelera_con_valor(deporte.value, dias=dias)
-        cartelera = resultado.get("cartelera", [])
-        return {
-            "deporte": deporte.value,
-            "rango_fechas": resultado.get("rango_fechas", ""),
-            "mensaje": resultado.get("mensaje", ""),
-            "total_partidos_analizados": len(cartelera),
-            "partidos_con_valor_positivo": sum(
-                1 for partido in cartelera if partido.get("tiene_valor_positivo", False)
-            ),
-            "total_con_probabilidades": sum(
-                1 for partido in cartelera if partido.get("modelo_disponible", False)
-            ),
-            "total_con_cuotas": sum(
-                1 for partido in cartelera if partido.get("fuente_cuotas")
-            ),
-            "cartelera": cartelera,
-        }
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"No fue posible consultar la cartelera: {exc}") from exc
 
 
 @app.post("/actualizar-datos", tags=["Administración"])
