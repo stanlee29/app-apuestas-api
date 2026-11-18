@@ -192,5 +192,4 @@
   window.addEventListener("appinstalled",()=>{$("install-btn").hidden=true;state.installPrompt=null;});
   if("serviceWorker" in navigator)window.addEventListener("load",()=>navigator.serviceWorker.register("/service-worker.js").catch(()=>{}));
   checkHealth().then(loadCartelera);
-  window.setInterval(()=>{if(!document.hidden)loadCartelera();},600000);
 })();
