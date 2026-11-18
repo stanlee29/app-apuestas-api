@@ -34,9 +34,17 @@ class PitchAPITests(unittest.TestCase):
                     ]},
                 ]
             },
-            "/matches/m_B8x2K9/stats": {"stats": [{"key": "total_shots", "home": "2", "away": "1"}]},
+            "/matches/m_B8x2K9/stats": {
+                "periods": [{
+                    "period": "All",
+                    "groups": [{
+                        "group_name": "Top stats",
+                        "items": [{"key": "total_shots", "title": "Total shots", "home": "2", "away": "1"}],
+                    }],
+                }],
+            },
             "/matches/m_B8x2K9/players": {"players": [{"id": "p_1", "name": "Player"}]},
-            "/matches/m_B8x2K9/h2h": {"meetings": []},
+            "/matches/m_B8x2K9/h2h": {"recent_matches": []},
             "/matches/m_B8x2K9/heatmaps": {"grid": {"length": 16, "width": 12}, "teams": [], "players": []},
             "/matches/m_B8x2K9/advanced": {"teams": []},
             "/matches/m_B8x2K9/events": {"events": []},
