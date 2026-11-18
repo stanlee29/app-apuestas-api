@@ -20,6 +20,7 @@ from sports_game_odds import (
     ProviderAccessError,
     ProviderResponseError,
     provider_status,
+    EL_SALVADOR_TZ,
 )
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -77,7 +78,8 @@ def _provider_http_error(exc: Exception) -> HTTPException:
 
 
 def _get_events_cached(sport: str, days: int, live: bool | None = None) -> dict[str, Any]:
-    key = f"{sport}:{days}:{live}"
+    local_day = datetime.now(EL_SALVADOR_TZ).date().isoformat()
+    key = f"{sport}:{days}:{live}:{local_day}"
     now = time.monotonic()
     cached = _event_cache.get(key)
     if cached and now - cached[0] < EVENT_CACHE_SECONDS:
@@ -264,6 +266,7 @@ def events(
         "eventos_en_vivo": result["eventos_en_vivo"],
         "eventos_programados": result["eventos_programados"],
         "cache_segundos": result["cache_segundos"],
+        "ventana_consulta": result.get("ventana_consulta", {}),
         "uso": result.get("uso", {}),
         "eventos": result["eventos"],
     }
@@ -283,16 +286,33 @@ def cartelera(
 ):
     result = _get_events_cached(deporte.value, dias)
     cards = [_event_for_legacy_card(event, deporte.value) for event in result["eventos"]]
-    start = datetime.now(timezone.utc).date()
-    end = start + timedelta(days=dias)
+    window = result.get("ventana_consulta") or {}
+    today_local = datetime.now(EL_SALVADOR_TZ).date()
+    start = datetime.fromisoformat(window.get("fecha_inicio_local", today_local.isoformat())).date()
+    end = datetime.fromisoformat(
+        window.get("fecha_fin_local", (today_local + timedelta(days=dias)).isoformat())
+    ).date()
+    leagues = result.get("ligas_consultadas", [])
+    message = (
+        f"Se consultaron {', '.join(leagues)} del {start:%d/%m/%Y} al {end:%d/%m/%Y} "
+        "en hora de El Salvador. Abre el detalle para consultar los mercados y precios publicados."
+        if cards else
+        f"SportsGameOdds no devolvió eventos para {', '.join(leagues)} "
+        f"entre el {start:%d/%m/%Y} y el {end:%d/%m/%Y}. "
+        "También se incluyen eventos que todavía no tienen cuotas; puede que no haya partidos "
+        "en las ligas configuradas para esas fechas."
+    )
     return {
         "deporte": deporte.value,
         "fuente": result["fuente"],
         "rango_fechas": f"{start:%Y%m%d}-{end:%Y%m%d}",
-        "mensaje": (
-            f"Datos consultados en {result['fuente']}. "
-            "Abre el detalle de un evento para consultar los mercados y las casas disponibles."
-        ),
+        "fecha_inicio_local": start.isoformat(),
+        "fecha_fin_local": end.isoformat(),
+        "zona_horaria": window.get("zona_horaria", "America/El_Salvador"),
+        "dias_incluidos": window.get("dias_incluidos", dias + 1),
+        "ligas_consultadas": leagues,
+        "ventana_consulta": window,
+        "mensaje": message,
         "total_partidos_analizados": len(cards),
         "total_con_probabilidades": sum(1 for item in cards if item["modelo_disponible"]),
         "total_con_cuotas": sum(1 for item in cards if any(item["cuotas"].values())),
