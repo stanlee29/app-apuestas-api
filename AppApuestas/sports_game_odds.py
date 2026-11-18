@@ -292,12 +292,13 @@ class SportsGameOddsClient:
         if sport not in SPORT_LEAGUES:
             raise ProviderConfigurationError(f"Deporte no admitido: {sport}")
         league_ids = (self.settings.leagues or SPORT_LEAGUES)[sport]
-        now = datetime.now(timezone.utc)
+        window = calendar_window(days)
         params: dict[str, Any] = {
             "leagueID": ",".join(league_ids),
-            "startsAfter": (now - timedelta(hours=6)).isoformat(timespec="seconds").replace("+00:00", "Z"),
-            "startsBefore": (now + timedelta(days=max(1, min(days, 7)))).isoformat(timespec="seconds").replace("+00:00", "Z"),
-            "oddsAvailable": "true",
+            "startsAfter": window["starts_after"],
+            "startsBefore": window["starts_before"],
+            # No filtrar por oddsAvailable: así también aparecen partidos
+            # programados que todavía no tienen cuotas publicadas.
             "finalized": "false",
             "cancelled": "false",
             "limit": 100,
@@ -319,6 +320,7 @@ class SportsGameOddsClient:
             "eventos_programados": sum(1 for item in events if not item["en_vivo"]),
             "eventos": events,
             "uso": dict(self.last_usage),
+            "ventana_consulta": window,
         }
 
     def get_event(self, event_id: str) -> dict[str, Any]:
@@ -335,6 +337,45 @@ class SportsGameOddsClient:
             "mercados": event["mercados"],
             "uso": dict(self.last_usage),
         }
+
+
+EL_SALVADOR_TZ = timezone(timedelta(hours=-6))
+
+
+def calendar_window(days: int, now_utc: datetime | None = None) -> dict[str, Any]:
+    """Construye una ventana por días calendario de El Salvador.
+
+    dias=0 incluye hoy; dias=1 incluye hoy y mañana; dias=2 incluye
+    hoy, mañana y pasado mañana. El límite superior es exclusivo.
+    """
+    if not isinstance(days, int) or not 0 <= days <= 7:
+        raise ValueError("El rango debe estar entre 0 y 7 días adicionales.")
+
+    current = now_utc or datetime.now(timezone.utc)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=timezone.utc)
+    current = current.astimezone(timezone.utc)
+
+    today_local = current.astimezone(EL_SALVADOR_TZ).date()
+    start_local = datetime.combine(today_local, datetime.min.time(), tzinfo=EL_SALVADOR_TZ)
+    end_local = start_local + timedelta(days=days + 1)
+
+    # Conserva eventos en vivo o recién iniciados, pero nunca consulta antes
+    # del inicio del día local seleccionado.
+    start_utc = max(start_local.astimezone(timezone.utc), current - timedelta(hours=6))
+    end_utc = end_local.astimezone(timezone.utc)
+
+    def iso_z(value: datetime) -> str:
+        return value.astimezone(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+    return {
+        "fecha_inicio_local": today_local.isoformat(),
+        "fecha_fin_local": (today_local + timedelta(days=days)).isoformat(),
+        "dias_incluidos": days + 1,
+        "zona_horaria": "America/El_Salvador",
+        "starts_after": iso_z(start_utc),
+        "starts_before": iso_z(end_utc),
+    }
 
 
 def provider_status() -> dict[str, Any]:
