@@ -131,10 +131,6 @@
       state.loading=false;$("refresh-btn").disabled=false;$("refresh-btn").classList.remove("is-loading");
     }
   }
-  function selectSport(sport) {
-    if(!SPORTS[sport]||state.sport===sport)return;
-    state.sport=sport;
-  
   function renderMarket(market) {
     const selections=Array.isArray(market.selecciones)?market.selecciones:[];
     const selectionHtml=selections.map((selection)=>{
@@ -150,6 +146,7 @@
     }).join("");
     return '<article class="market-card"><header><strong>'+escapeHtml(market.nombre||"Mercado")+'</strong><span>'+escapeHtml(market.periodo||"")+(market.linea!=null?' · Línea '+escapeHtml(market.linea):"")+'</span></header>'+selectionHtml+'</article>';
   }
+
   async function loadMarkets(eventId) {
     const dialog=$("market-dialog"),body=$("market-content"),title=$("market-title");
     title.textContent="Mercados del evento";
@@ -167,13 +164,20 @@
     }
   }
 
-  $("events-list").addEventListener("click",(event)=>{const button=event.target.closest("[data-markets-id]");if(button&&button.dataset.marketsId)loadMarkets(button.dataset.marketsId);});
-  $("market-close").addEventListener("click",()=> $("market-dialog").close());
-  document.querySelectorAll("[data-sport]").forEach((button)=>{
+  function selectSport(sport) {
+    if(!SPORTS[sport]||state.sport===sport)return;
+    state.sport=sport;
+    document.querySelectorAll("[data-sport]").forEach((button)=>{
       button.setAttribute("aria-pressed",String(button.dataset.sport===sport));
     });
     loadCartelera();
   }
+
+  $("events-list").addEventListener("click",(event)=>{
+    const button=event.target.closest("[data-markets-id]");
+    if(button&&button.dataset.marketsId)loadMarkets(button.dataset.marketsId);
+  });
+  $("market-close").addEventListener("click",()=> $("market-dialog").close());
   document.querySelectorAll("[data-sport]").forEach(button=>button.addEventListener("click",()=>selectSport(button.dataset.sport)));
   $("days-filter").addEventListener("change",event=>{state.days=Number(event.target.value);loadCartelera();});
   $("refresh-btn").addEventListener("click",loadCartelera);
