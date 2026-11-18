@@ -1,63 +1,74 @@
-# EdgeBet API + Flutter PWA
+# AppApuestas
 
-Backend de EdgeBet para la app Flutter/FlutLab. La fuente prevista de eventos, mercados y cuotas es el feed B2B de Altenar habilitado para GanaPlay. No se consulta ESPN como sustituto de GanaPlay ni se construyen cuotas ficticias.
+Aplicación de consulta e investigación deportiva. El backend FastAPI obtiene eventos, mercados y cuotas de SportsGameOdds API v2. La aplicación Flutter se importa y construye desde FlutLab; el backend se despliega de forma independiente.
 
-## Arquitectura
+## Funcionalidad del backend
 
-- AppApuestas/: API FastAPI, conector de lectura de Altenar, históricos y PWA.
-- FlutterApp/: guía y punto de referencia de la app Flutter. El ZIP actualizado para importar en FlutLab se entrega por separado en la conversación.
-- GET /api/v1/ganaplay/events: eventos prepartido y en vivo.
-- GET /api/v1/ganaplay/events/{event_id}/markets: mercados y selecciones con sus precios.
-- GET /api/v1/ganaplay/status: estado de configuración del feed.
-- GET /health: estado del backend.
+- Cartelera de fútbol, NBA, NFL y MLB, según las ligas disponibles en la cuenta del proveedor.
+- Mercados y selecciones con precios por casa, cuota americana, conversión decimal, línea y hora de actualización.
+- Filtro de eventos en vivo y por rango de días.
+- Consulta de probabilidades a partir de los históricos locales cuando hay equipos compatibles.
+- Cálculo de EV únicamente cuando existe una probabilidad del modelo y una cuota real.
+- Caché del servidor alineada por defecto con la frecuencia de 10 minutos anunciada en el plan gratuito.
 
-## Feed GanaPlay / Altenar
+## Fuente de datos y plan gratuito
 
-El feed Data Export descrito en documentación pública de Altenar está dirigido a operadores/licenciatarios B2B. El acceso se controla mediante whitelist de IP y un importerId asignado al operador durante la integración. No uses un importer ID de ejemplo, endpoints de staging ni credenciales de otra marca.
+El conector utiliza la API v2 de SportsGameOdds:
 
-Antes de habilitarlo, solicita a GanaPlay/Altenar:
-1. Endpoint de producción para el Data Feed de GanaPlay El Salvador.
-2. importerId asignado a esa marca.
-3. Autorización y whitelist de la IP pública del servicio EdgeBet.
-4. Confirmación del uso permitido para consulta/analítica externa y de los límites de frecuencia.
-5. Una respuesta JSON real de GetSports, GetEvents, GetLiveEvents y GetMarkets para mapear con precisión el esquema del operador.
+- Endpoint de eventos: \`GET https://api.sportsgameodds.com/v2/events\`.
+- Autenticación privada mediante la cabecera \`X-Api-Key\`.
+- Los objetos de evento incluyen los mercados y las cuotas disponibles por casa.
+- El plan Amateur publicado incluye 2.500 objetos/mes, 10 solicitudes/minuto, frecuencia de actualización de 10 minutos, 8 ligas y 9 casas.
+- Ligas publicadas en ese nivel: NFL, NBA, MLB, NHL, College Football, College Basketball, Champions League y MLS.
+- La página de alta indica que se solicita tarjeta al registrarse, pero que el plan gratuito no se cobra salvo que se actualice.
 
-Configura las variables del entorno de Render a partir de .env.example. No guardes credenciales en el repositorio ni dentro de Flutter.
+La cobertura no equivale a GanaPlay ni a todas las ligas de fútbol. La disponibilidad efectiva debe confirmarse con la cuenta del proveedor. Nunca se etiqueta una cuota de otra casa como cuota de GanaPlay.
 
-## Actualización
+Referencias oficiales:
+- https://sportsgameodds.com/pricing
+- https://sportsgameodds.com/docs/basics/setup
+- https://sportsgameodds.com/docs/endpoints/getEvents
+- https://sportsgameodds.com/docs/basics/quickstart
 
-La APK solicita eventos al abrir la cartelera y vuelve a consultarlos cada 60 segundos mientras la pantalla está abierta. Los mercados de cada partido se consultan al abrir el detalle y se actualizan cada 60 segundos mientras ese detalle permanece abierto. El backend aplica una caché corta configurable.
+## Configuración
 
-Esto todavía no constituye un recolector persistente 24/7. Para continuar recopilando cuando la APK está cerrada, hace falta un proceso programado/worker siempre activo y almacenamiento persistente. El filesystem efímero de un servicio web gratuito no debe usarse como histórico.
+Añade \`SPORTSGAMEODDS_API_KEY\` a las variables privadas de Render. No guardes la clave real en GitHub, dentro de Flutter ni en archivos públicos. Las demás variables opcionales se documentan en \`AppApuestas/.env.example\`.
+
+## Endpoints
+
+| Ruta | Función |
+| --- | --- |
+| \`GET /health\` | Estado del backend y configuración del proveedor |
+| \`GET /api/v1/source/status\` | Estado, ligas y límites publicados |
+| \`GET /api/v1/sports\` | Deportes y ligas configuradas |
+| \`GET /api/v1/events?deporte=nba&dias=2\` | Eventos, mercados y cuotas |
+| \`GET /api/v1/events/{event_id}/markets\` | Mercados completos de un evento |
+| \`GET /cartelera/{deporte}?dias=2\` | Respuesta compatible con la aplicación Flutter |
+| \`GET /equipos/{deporte}\` | Equipos encontrados en históricos |
+| \`GET /predecir\` | Predicción manual con históricos |
+| \`POST /actualizar-datos\` | Actualizar los CSV de resultados históricos |
+
+Deportes admitidos: \`futbol\`, \`nba\`, \`nfl\`, \`mlb\`.
 
 ## Ejecutar localmente
 
 \`\`\`bash
 cd AppApuestas
 python -m venv .venv
-# Windows: .venv\Scripts\activate
-# Linux/macOS: source .venv/bin/activate
+# Windows
+.venv\Scripts\activate
+# Linux/macOS
+source .venv/bin/activate
 pip install -r requirements.txt
 uvicorn api_servidor:app --reload
 \`\`\`
 
 Abrir http://127.0.0.1:8000 y http://127.0.0.1:8000/docs.
 
-## Endpoints existentes
+## Límites operativos
 
-| Endpoint | Uso |
-| --- | --- |
-| GET /health | Estado del backend y configuración del feed |
-| GET /api/v1/ganaplay/status | Estado del feed Altenar |
-| GET /api/v1/ganaplay/sports | Catálogo de deportes del proveedor |
-| GET /api/v1/ganaplay/events?deporte=futbol | Eventos prepartido y en vivo |
-| GET /api/v1/ganaplay/events/{event_id}/markets | Mercados y selecciones del evento |
-| GET /cartelera/{deporte} | Alias compatible con versiones anteriores de la APK |
-| GET /equipos/{deporte} | Equipos en históricos |
-| GET /predecir | Predicción estadística manual |
+La aplicación móvil puede consultar el backend mientras está abierta. La caché reduce solicitudes repetidas, pero esto no es un recolector permanente 24/7. Un servicio gratuito puede suspenderse y su disco local no debe usarse como histórico persistente. Para almacenar capturas de cuotas y recopilar con la app cerrada se requiere base de datos y un proceso programado/worker con disponibilidad adecuada.
 
-Deportes de la app: futbol, nba, nfl, mlb.
+## Modelo estadístico
 
-## Importante
-
-La documentación Data Feed consultada describe eventos del día actual y mercados por evento; el periodo de datos y los mercados disponibles deben confirmarse con el feed de producción que Altenar asigne a GanaPlay. La respuesta de producción será necesaria para completar cualquier campo de mercado que cambie entre versiones.
+Las predicciones existentes son una primera aproximación a partir de CSV históricos. No se consideran validadas para uso real hasta comprobar cobertura de históricos, calibración fuera de muestra y métricas como Brier Score y Log Loss.
