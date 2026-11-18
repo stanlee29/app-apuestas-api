@@ -89,4 +89,4 @@ El modelo todavía no incorpora cuotas, lesiones, alineaciones ni modelos propio
 
 ### Versión
 
-API backend 1.0.7 o posterior.
+API backend 1.0.8 o posterior.
