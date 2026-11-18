@@ -115,6 +115,119 @@ class StatsBombOpenData:
             raise StatsBombDataError("El listado de partidos no tiene el formato esperado.")
         return [item for item in raw if isinstance(item, dict)]
 
+    def match_xg_summary(self, match_id: int, match: dict[str, Any]) -> dict[str, Any]:
+        """Resume xG de los remates para un partido histórico publicado."""
+        if match_id < 1:
+            raise ValueError("El identificador de partido debe ser positivo.")
+        events = self._json(f"events/{match_id}.json", ttl=24 * 60 * 60)
+        if not isinstance(events, list):
+            raise StatsBombDataError("El feed de eventos no tiene el formato esperado.")
+        home_name = self._team_name(match.get("home_team"))
+        away_name = self._team_name(match.get("away_team"))
+        xg = {home_name: 0.0, away_name: 0.0}
+        shots = {home_name: 0, away_name: 0}
+        for event in events:
+            if not isinstance(event, dict) or self._team_name(event.get("type")) != "Shot":
+                continue
+            team = self._team_name(event.get("team"))
+            shot = event.get("shot") or {}
+            if team not in xg or not isinstance(shot, dict):
+                continue
+            raw_xg = shot.get("statsbomb_xg")
+            if not isinstance(raw_xg, (int, float)):
+                continue
+            xg[team] += float(raw_xg)
+            shots[team] += 1
+        return {
+            "match_id": match_id,
+            "home_team": home_name,
+            "away_team": away_name,
+            "xg_home": round(xg.get(home_name, 0.0), 4),
+            "xg_away": round(xg.get(away_name, 0.0), 4),
+            "shots_home_with_xg": shots.get(home_name, 0),
+            "shots_away_with_xg": shots.get(away_name, 0),
+            "has_xg": bool(sum(shots.values())),
+        }
+
+    def recent_team_xg(
+        self,
+        matches: list[dict[str, Any]],
+        home_team_name: str,
+        away_team_name: str,
+        limit: int = 8,
+    ) -> dict[str, Any] | None:
+        """Obtiene tasas xG recientes: local en casa y visitante fuera."""
+        if not 3 <= limit <= 12:
+            raise ValueError("El límite de partidos xG debe estar entre 3 y 12.")
+        home_key = self._team_name({"name": home_team_name}).casefold()
+        away_key = self._team_name({"name": away_team_name}).casefold()
+
+        def name_for(row: dict[str, Any], side: str) -> str:
+            return self._team_name(row.get(side))
+
+        completed = [
+            item for item in matches
+            if isinstance(item, dict)
+            and item.get("match_status") == "available"
+            and item.get("home_score") is not None
+            and item.get("away_score") is not None
+        ]
+        home_games = [
+            item for item in completed
+            if name_for(item, "home_team").casefold() == home_key
+        ]
+        away_games = [
+            item for item in completed
+            if name_for(item, "away_team").casefold() == away_key
+        ]
+        home_games.sort(key=lambda item: str(item.get("match_date") or ""), reverse=True)
+        away_games.sort(key=lambda item: str(item.get("match_date") or ""), reverse=True)
+
+        summaries: dict[int, dict[str, Any]] = {}
+        def summary_for(match: dict[str, Any]) -> dict[str, Any] | None:
+            try:
+                match_id = int(match.get("match_id"))
+                if match_id not in summaries:
+                    summaries[match_id] = self.match_xg_summary(match_id, match)
+                return summaries[match_id] if summaries[match_id].get("has_xg") else None
+            except (TypeError, ValueError, StatsBombDataError):
+                return None
+
+        home_for: list[float] = []
+        home_against: list[float] = []
+        for match in home_games[:limit]:
+            summary = summary_for(match)
+            if summary is not None:
+                home_for.append(float(summary["xg_home"]))
+                home_against.append(float(summary["xg_away"]))
+
+        away_for: list[float] = []
+        away_against: list[float] = []
+        for match in away_games[:limit]:
+            summary = summary_for(match)
+            if summary is not None:
+                away_for.append(float(summary["xg_away"]))
+                away_against.append(float(summary["xg_home"]))
+
+        if len(home_for) < 3 or len(away_for) < 3:
+            return None
+
+        avg_home_for = sum(home_for) / len(home_for)
+        avg_home_against = sum(home_against) / len(home_against)
+        avg_away_for = sum(away_for) / len(away_for)
+        avg_away_against = sum(away_against) / len(away_against)
+        return {
+            "lambda_home": round(max(0.05, (avg_home_for + avg_away_against) / 2), 4),
+            "lambda_away": round(max(0.05, (avg_away_for + avg_home_against) / 2), 4),
+            "home_xg_for_avg": round(avg_home_for, 4),
+            "home_xg_against_avg": round(avg_home_against, 4),
+            "away_xg_for_avg": round(avg_away_for, 4),
+            "away_xg_against_avg": round(avg_away_against, 4),
+            "home_matches_with_xg": len(home_for),
+            "away_matches_with_xg": len(away_for),
+            "xg_source": "StatsBomb Open Data · statsbomb_xg por remate",
+        }
+
     @staticmethod
     def _team_name(value: Any) -> str:
         if isinstance(value, dict):
