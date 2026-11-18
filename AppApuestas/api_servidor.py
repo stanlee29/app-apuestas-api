@@ -31,7 +31,7 @@ BASE_DIR = Path(__file__).resolve().parent
 DATOS_DIR = BASE_DIR / "datos"
 STATIC_DIR = BASE_DIR / "static"
 INDEX_FILE = STATIC_DIR / "index.html"
-VERSION = "1.0.7"
+VERSION = "1.0.8"
 EVENT_CACHE_SECONDS = max(60, int(os.getenv("SPORTSGAMEODDS_CACHE_SECONDS", "600")))
 MARKET_CACHE_SECONDS = max(60, int(os.getenv("SPORTSGAMEODDS_MARKET_CACHE_SECONDS", "600")))
 
