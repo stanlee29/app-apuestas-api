@@ -43,6 +43,18 @@ class FootballModelTests(unittest.TestCase):
         self.assertEqual(result["fuente_historica"], "StatsBomb Open Data")
         self.assertTrue(result["advertencias"])
 
+    def test_blends_recent_xg_when_sample_is_sufficient(self):
+        xg_rates = {
+            "lambda_home": 1.8,
+            "lambda_away": 0.9,
+            "home_matches_with_xg": 5,
+            "away_matches_with_xg": 4,
+        }
+        result = predict_from_matches(make_matches(), "City FC", "United FC", xg_rates=xg_rates)
+        self.assertEqual(result["metodo_tasas_goles"], "xG reciente + goles reales")
+        self.assertEqual(result["xg_reciente"]["lambda_home"], 1.8)
+        self.assertGreater(result["goles_esperados"]["local"], 0.0)
+
     def test_rejects_same_team(self):
         with self.assertRaises(ValueError):
             predict_from_matches(make_matches(), "City FC", "City FC")
