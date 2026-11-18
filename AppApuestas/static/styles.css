@@ -182,3 +182,25 @@ h2 { margin: 5px 0 0; font-size: 21px; letter-spacing: -.025em; }
   .market-content { grid-template-columns: 1fr; padding: 10px; }
   .market-dialog-head { padding: 13px 14px; }
 }
+
+
+/* Explorador de mercados: muestra precios reales primero y carga resultados por bloques. */
+.market-content { display: block; padding: 14px; }
+.market-toolbar { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding: 10px; margin-bottom: 12px; border: 1px solid #2a3a50; border-radius: 9px; background: #111d2c; }
+.market-toolbar input[type="search"] { flex: 1 1 220px; min-width: 160px; padding: 9px 11px; border: 1px solid #34465d; border-radius: 7px; outline: none; background: #0b1420; color: #e7eef8; font: inherit; font-size: 11px; }
+.market-toolbar input[type="search"]:focus { border-color: #61c7b6; box-shadow: 0 0 0 2px #61c7b622; }
+.market-all-toggle { display: inline-flex; align-items: center; gap: 7px; color: #a6b4c7; font-size: 10px; cursor: pointer; }
+.market-all-toggle input { accent-color: #66d4bf; }
+.market-count { color: #8494aa; font-size: 9px; white-space: nowrap; }
+.market-results { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 10px; }
+.market-pagination { display: flex; justify-content: center; padding: 14px 0 5px; }
+.market-pagination button { border: 1px solid #356a65; border-radius: 7px; padding: 9px 16px; background: #16302f; color: #bcfff1; font-size: 10px; font-weight: 700; cursor: pointer; }
+.market-pagination button[hidden] { display: none; }
+.market-pagination button:hover { background: #1c4542; }
+@media (max-width: 720px) {
+  .market-content { padding: 10px; }
+  .market-toolbar { align-items: stretch; flex-direction: column; }
+  .market-toolbar input[type="search"] { flex-basis: auto; width: 100%; box-sizing: border-box; }
+  .market-results { grid-template-columns: 1fr; }
+  .market-count { white-space: normal; }
+}
