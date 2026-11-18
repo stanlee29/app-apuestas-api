@@ -2,9 +2,13 @@ name: Validate AppApuestas
 
 on:
   push:
-    branches: [main, "feature/**"]
+    branches: [main]
   pull_request:
     branches: [main]
+
+concurrency:
+  group: app-apuestas-ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   tests:
