@@ -131,11 +131,38 @@
       state.loading=false;$("refresh-btn").disabled=false;$("refresh-btn").classList.remove("is-loading");
     }
   }
-  function renderMarket(market) {
-    const selections=Array.isArray(market.selecciones)?market.selecciones:[];
+  let currentMarkets = [];
+  let showAllMarkets = false;
+  let marketLimit = 80;
+  let marketQuery = "";
+
+  function marketHasPrices(market) {
+    return (Array.isArray(market.selecciones)?market.selecciones:[]).some((selection)=>
+      (Array.isArray(selection.casas)?selection.casas:[]).some((house)=>
+        Number.isFinite(Number(house.cuota_decimal)) && Number(house.cuota_decimal)>1
+      )
+    );
+  }
+
+  function marketMatchesQuery(market, query) {
+    if(!query) return true;
+    const selections=(market.selecciones||[]).map((item)=>item.nombre||item.lado||"").join(" ");
+    const haystack=[
+      market.nombre,market.periodo,market.stat_id,market.entidad_id,market.linea,selections
+    ].join(" ").toLocaleLowerCase();
+    return haystack.includes(query);
+  }
+
+  function renderMarket(market, pricedOnly) {
+    let selections=Array.isArray(market.selecciones)?market.selecciones:[];
+    if(pricedOnly) selections=selections.filter((selection)=>
+      (Array.isArray(selection.casas)?selection.casas:[]).some((house)=>
+        Number.isFinite(Number(house.cuota_decimal)) && Number(house.cuota_decimal)>1
+      )
+    );
     const selectionHtml=selections.map((selection)=>{
       const houses=Array.isArray(selection.casas)?selection.casas:[];
-      const oddsHtml=houses.length?houses.slice(0,6).map((house)=>{
+      const oddsHtml=houses.length?houses.filter((house)=>Number(house.cuota_decimal)>1).slice(0,6).map((house)=>{
         const label=escapeHtml(house.casa||house.casa_id||"Casa");
         const price=Number(house.cuota_decimal);
         const quote=Number.isFinite(price)?price.toFixed(2):"—";
@@ -147,18 +174,57 @@
     return '<article class="market-card"><header><strong>'+escapeHtml(market.nombre||"Mercado")+'</strong><span>'+escapeHtml(market.periodo||"")+(market.linea!=null?' · Línea '+escapeHtml(market.linea):"")+'</span></header>'+selectionHtml+'</article>';
   }
 
+  function updateMarketView() {
+    const results=$("market-results");
+    const count=$("market-count");
+    const more=$("market-more");
+    if(!results||!count||!more)return;
+    const query=marketQuery.trim().toLocaleLowerCase();
+    const filtered=currentMarkets.filter((market)=>
+      (showAllMarkets||marketHasPrices(market)) && marketMatchesQuery(market,query)
+    );
+    const visible=filtered.slice(0,marketLimit);
+    const pricedCount=currentMarkets.filter(marketHasPrices).length;
+    count.textContent=showAllMarkets
+      ? filtered.length+" de "+currentMarkets.length+" mercados"
+      : pricedCount+" con cuotas de "+currentMarkets.length+" mercados";
+    results.innerHTML=visible.length
+      ? visible.map((market)=>renderMarket(market,!showAllMarkets)).join("")
+      : '<div class="market-loading">'+(query?"No hay mercados que coincidan con la búsqueda.":"No hay precios de casas disponibles para este evento.")+'</div>';
+    more.hidden=visible.length>=filtered.length;
+    more.textContent="Cargar "+Math.min(80,filtered.length-visible.length)+" más · "+(filtered.length-visible.length)+" restantes";
+  }
+
   async function loadMarkets(eventId) {
     const dialog=$("market-dialog"),body=$("market-content"),title=$("market-title");
     title.textContent="Mercados del evento";
+    currentMarkets=[];showAllMarkets=false;marketLimit=80;marketQuery="";
     body.innerHTML='<div class="market-loading">Consultando precios publicados…</div>';
     if(typeof dialog.showModal==="function"&&!dialog.open)dialog.showModal();
     try {
       const response=await fetch("/api/v1/events/"+encodeURIComponent(eventId)+"/markets",{cache:"no-store"});
       const payload=await response.json();
       if(!response.ok)throw new Error(typeof payload.detail==="string"?payload.detail:"Error "+response.status);
-      const markets=Array.isArray(payload.mercados)?payload.mercados:[];
-      title.textContent="Mercados · "+markets.length;
-      body.innerHTML=markets.length?markets.map(renderMarket).join(""):'<div class="market-loading">El proveedor no entregó mercados disponibles para este evento.</div>';
+      currentMarkets=Array.isArray(payload.mercados)?payload.mercados:[];
+      body.innerHTML=
+        '<div class="market-toolbar">'+
+          '<input id="market-search" type="search" autocomplete="off" placeholder="Buscar mercado o selección…" aria-label="Buscar mercados">'+
+          '<label class="market-all-toggle"><input id="market-show-all" type="checkbox"> Mostrar también mercados sin cuotas</label>'+
+          '<span id="market-count" class="market-count"></span>'+
+        '</div>'+
+        '<div id="market-results" class="market-results"></div>'+
+        '<div class="market-pagination"><button id="market-more" type="button" hidden>Cargar más mercados</button></div>';
+      title.textContent="Mercados del evento · "+currentMarkets.length;
+      $("market-search").addEventListener("input",(event)=>{
+        marketQuery=event.target.value||"";marketLimit=80;updateMarketView();
+      });
+      $("market-show-all").addEventListener("change",(event)=>{
+        showAllMarkets=event.target.checked;marketLimit=80;updateMarketView();
+      });
+      $("market-more").addEventListener("click",()=>{
+        marketLimit+=80;updateMarketView();
+      });
+      updateMarketView();
     } catch(error) {
       body.innerHTML='<div class="market-loading error-text">'+escapeHtml(error.message)+'</div>';
     }
