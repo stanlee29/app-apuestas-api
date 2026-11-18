@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b101a">
+  <meta name="description" content="AppApuestas: análisis estadístico de eventos deportivos y probabilidades estimadas.">
+  <title>AppApuestas | Análisis deportivo</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/styles.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <div class="app-frame">
+    <aside class="sidebar">
+      <a class="brand" href="/" aria-label="AppApuestas inicio">
+        <span class="brand-mark">A</span>
+        <span class="brand-copy"><strong>APP<span>/</span>APUESTAS</strong><small>ANÁLISIS DEPORTIVO</small></span>
+      </a>
+
+      <div class="side-label">DEPORTES</div>
+      <nav class="sport-nav" aria-label="Seleccionar deporte">
+        <button class="sport-link" data-sport="futbol" aria-pressed="true"><span class="sport-icon">⚽</span><span>Fútbol</span><span class="nav-count" id="count-futbol">—</span></button>
+        <button class="sport-link" data-sport="nba" aria-pressed="false"><span class="sport-icon">🏀</span><span>NBA</span><span class="nav-count" id="count-nba">—</span></button>
+        <button class="sport-link" data-sport="nfl" aria-pressed="false"><span class="sport-icon">🏈</span><span>NFL</span><span class="nav-count" id="count-nfl">—</span></button>
+        <button class="sport-link" data-sport="mlb" aria-pressed="false"><span class="sport-icon">⚾</span><span>MLB</span><span class="nav-count" id="count-mlb">—</span></button>
+      </nav>
+
+      <div class="side-label filter-label">FILTROS</div>
+      <label class="field-label" for="days-filter">Rango de cartelera</label>
+      <select id="days-filter" class="select-control">
+        <option value="0">Hoy</option>
+        <option value="1">Próximas 24 horas</option>
+        <option value="2" selected>Próximos 2 días</option>
+        <option value="3">Próximos 3 días</option>
+        <option value="5">Próximos 5 días</option>
+        <option value="7">Próximos 7 días</option>
+      </select>
+
+      <div class="sidebar-spacer"></div>
+      <div class="source-box">
+        <span class="source-dot"></span>
+        <div><strong>Fuente de eventos</strong><small>SportsGameOdds</small></div>
+      </div>
+      <div class="sidebar-footer">APP APUESTAS <span>•</span> MVP 0.1</div>
+    </aside>
+
+    <main class="main-content">
+      <header class="topbar">
+        <div class="breadcrumbs"><span>WORKSPACE</span><span class="crumb-separator">/</span><strong>ANÁLISIS DEPORTIVO</strong></div>
+        <div class="top-actions">
+          <div class="connection-pill" id="api-status" role="status"><span class="status-dot"></span><span>Conectando API</span></div>
+          <button class="icon-button install-button" id="install-btn" type="button" hidden title="Instalar aplicación"><span>↓</span><span class="install-text">Instalar app</span></button>
+          <button class="icon-button refresh-button" id="refresh-btn" type="button" title="Actualizar cartelera" aria-label="Actualizar cartelera">↻</button>
+        </div>
+      </header>
+
+      <section class="page-heading">
+        <div>
+          <div class="eyebrow"><span class="eyebrow-line"></span> CENTRO DE INVESTIGACIÓN</div>
+          <h1>Cartelera <span>deportiva</span></h1>
+          <p class="page-subtitle">Eventos, probabilidades del modelo y precios publicados por la fuente.</p>
+        </div>
+        <div class="heading-meta"><span class="live-indicator"></span><span id="last-updated">Aún sin consultar</span></div>
+      </section>
+
+      <section class="metric-grid" aria-label="Resumen de cartelera">
+        <article class="metric-card">
+          <div class="metric-top"><span>EVENTOS ENCONTRADOS</span><span class="metric-symbol">◎</span></div>
+          <div class="metric-value" id="metric-events">—</div>
+          <div class="metric-note">En el rango seleccionado</div>
+        </article>
+        <article class="metric-card">
+          <div class="metric-top"><span>CON PREDICCIÓN</span><span class="metric-symbol">◈</span></div>
+          <div class="metric-value" id="metric-model">—</div>
+          <div class="metric-note">Históricos compatibles</div>
+        </article>
+        <article class="metric-card">
+          <div class="metric-top"><span>CON CUOTAS</span><span class="metric-symbol">⌁</span></div>
+          <div class="metric-value" id="metric-odds">—</div>
+          <div class="metric-note">Precios de las casas disponibles</div>
+        </article>
+        <article class="metric-card metric-highlight">
+          <div class="metric-top"><span>EV POSITIVO</span><span class="metric-symbol">↗</span></div>
+          <div class="metric-value" id="metric-value">—</div>
+          <div class="metric-note">Solo con probabilidad y cuota disponible</div>
+        </article>
+      </section>
+
+      <section class="section-heading">
+        <div>
+          <div class="section-kicker">AGENDA DE PARTIDOS</div>
+          <h2 id="selected-sport-title">Fútbol</h2>
+        </div>
+        <div class="section-tools">
+          <span class="range-chip" id="date-range">Rango pendiente</span>
+          <span class="results-count" id="results-count">0 eventos</span>
+        </div>
+      </section>
+
+      <div class="notice" id="notice" hidden role="status"></div>
+      <dialog id="market-dialog" class="market-dialog">
+        <div class="market-dialog-head">
+          <div><div class="section-kicker">DETALLE DE EVENTO</div><h2 id="market-title">Mercados</h2></div>
+          <button class="icon-button" id="market-close" type="button" aria-label="Cerrar">×</button>
+        </div>
+        <div id="market-content" class="market-content"></div>
+      </dialog>
+      <section class="events-grid" id="events-list" aria-live="polite" aria-busy="true">
+        <article class="loading-card"><span class="loader"></span><strong>Consultando cartelera</strong><small>Conectando con la API deportiva...</small></article>
+      </section>
+
+      <section class="methodology">
+        <div class="method-icon">i</div>
+        <div>
+          <strong>Cómo interpretar estos datos</strong>
+          <p>Las probabilidades son estimaciones del modelo a partir de los históricos disponibles. El EV se calcula únicamente cuando hay una cuota publicada y una predicción compatible. Una estimación no garantiza un resultado ni constituye una recomendación de apuesta.</p>
+        </div>
+      </section>
+
+      <footer class="page-footer"><span>APP APUESTAS</span><span>Zona horaria: El Salvador (UTC−6)</span><span>Eventos y cuotas: SportsGameOdds</span></footer>
+    </main>
+  </div>
+</body>
+</html>

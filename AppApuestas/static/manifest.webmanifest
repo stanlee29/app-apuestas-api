@@ -1,0 +1,14 @@
+{
+  "id": "/",
+  "name": "AppApuestas",
+  "short_name": "Apuestas",
+  "description": "Consulta de eventos, mercados y cuotas deportivas.",
+  "lang": "es",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#0b101a",
+  "theme_color": "#0b101a",
+  "icons": [{"src":"/static/icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}]
+}

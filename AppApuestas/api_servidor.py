@@ -1,171 +1,402 @@
-"""
-Módulo: api_servidor.py
-Descripción: Backend FastAPI sincronizado con extractor_ganaplay.py (ESPN API).
-             Incluye menú desplegable de deportes, análisis de EV y ordenamiento cronológico.
-             Compatible con Python 3.14 y entornos serverless (Render).
-"""
-
+"""API de AppApuestas: cartelera, mercados y análisis estadístico."""
 import os
-import sys
-import subprocess
+import re
+import time
+from datetime import datetime, timedelta, timezone
 from enum import Enum
+from pathlib import Path
+from typing import Any
+
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 import uvicorn
 
-# Importaciones del motor predictivo
 from motor_probabilidades import predecir_partido, cargar_datos, calcular_valor_ev
+from sports_game_odds import (
+    SportsGameOddsClient,
+    ProviderConfigurationError,
+    ProviderAccessError,
+    ProviderResponseError,
+    provider_status,
+)
 
-# Importación de la función síncrona del extractor actualizado
-from extractor_ganaplay import obtener_cartelera_con_valor
+BASE_DIR = Path(__file__).resolve().parent
+DATOS_DIR = BASE_DIR / "datos"
+STATIC_DIR = BASE_DIR / "static"
+INDEX_FILE = STATIC_DIR / "index.html"
+VERSION = "1.0.0"
+EVENT_CACHE_SECONDS = max(60, int(os.getenv("SPORTSGAMEODDS_CACHE_SECONDS", "600")))
+MARKET_CACHE_SECONDS = max(60, int(os.getenv("SPORTSGAMEODDS_MARKET_CACHE_SECONDS", "600")))
 
-# ==============================================================================
-# ENUM PARA MENÚ DESPLEGABLE EN /docs
-# ==============================================================================
-class DeporteEnum(str, Enum):
+_event_cache: dict[str, tuple[float, dict[str, Any]]] = {}
+_market_cache: dict[str, tuple[float, dict[str, Any]]] = {}
+_model_data_cache: tuple[float, dict[str, Any]] | None = None
+
+
+class SportEnum(str, Enum):
+    futbol = "futbol"
     nba = "nba"
     nfl = "nfl"
     mlb = "mlb"
-    futbol = "futbol"
 
-# ==============================================================================
-# 1. CONFIGURACIÓN DE LA APLICACIÓN Y CORS
-# ==============================================================================
+
 app = FastAPI(
-    title="API Predictor Deportivo Pro",
-    description="Backend para consulta de equipos, predicciones estadísticas y cartelera en tiempo real vía ESPN API.",
-    version="3.1.0"
+    title="AppApuestas API",
+    description="API de consulta deportiva, cuotas y mercados. Solo lectura; no acepta ni envía apuestas.",
+    version=VERSION,
 )
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
+    allow_credentials=False,
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
 
-# ==============================================================================
-# 2. EVENTO DE INICIO AUTOMÁTICO (STARTUP)
-# ==============================================================================
-@app.on_event("startup")
-def verificar_y_descargar_datos():
-    """Auto-arranque: descarga datos históricos si no existen en la carpeta /datos."""
-    datos_dir = "datos"
-    archivos = ["nba_resultados.csv", "nfl_resultados.csv", "mlb_resultados.csv", "futbol_resultados.csv"]
-
-    if not os.path.exists(datos_dir) or not all(os.path.exists(os.path.join(datos_dir, f)) for f in archivos):
-        print("⚠️ Arranque sin datos históricos. Ejecutando extractor automático...")
-        script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "extractor_datos.py")
-        try:
-            subprocess.run([sys.executable, script_path], check=True, capture_output=True, text=True, timeout=300)
-            print("✅ Descarga automática de datos históricos completada.")
-        except Exception as e:
-            print(f"❌ Error en arranque automático de datos: {e}")
-
-# ==============================================================================
-# 3. ENDPOINTS
-# ==============================================================================
-
-@app.get("/equipos/{deporte}", tags=["Consulta de Datos"])
-def obtener_equipos(deporte: DeporteEnum):
-    datos = cargar_datos("datos")
-    df = datos.get(deporte.value)
-    if df is None or df.empty:
-        raise HTTPException(status_code=404, detail="Sin datos históricos. Ejecuta POST /actualizar-datos")
-
-    equipos = sorted(list(set(df['equipo_local'].dropna().astype(str).unique()) | set(df['equipo_visitante'].dropna().astype(str).unique())))
-    return {"deporte": deporte.value, "total_equipos": len(equipos), "equipos": equipos}
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
-@app.get("/predecir", tags=["Motor Predictivo"])
-def predecir_resultado(
-    deporte: DeporteEnum,
-    local: str,
-    visitante: str,
-    cuota_local: float = None,
-    cuota_empate: float = None,
-    cuota_visitante: float = None
-):
-    datos = cargar_datos("datos")
-    resultado = predecir_partido(deporte.value, local, visitante, datos)
-
-    if "error" in resultado:
-        raise HTTPException(status_code=400, detail=resultado["error"])
-
-    analisis_ev = {}
-    if cuota_local is not None:
-        analisis_ev["local"] = calcular_valor_ev(resultado["prob_victoria_local"] * 100, cuota_local)
-    if cuota_visitante is not None:
-        analisis_ev["visitante"] = calcular_valor_ev(resultado["prob_victoria_visitante"] * 100, cuota_visitante)
-    if "prob_empate" in resultado and cuota_empate is not None:
-        analisis_ev["empate"] = calcular_valor_ev(resultado["prob_empate"] * 100, cuota_empate)
-
-    if analisis_ev:
-        resultado["analisis_apuestas"] = analisis_ev
-
-    return {"deporte": deporte.value, "partido": f"{local} vs {visitante}", "prediccion": resultado}
-
-
-@app.get("/cartelera/{deporte}", tags=["Cartelera con Valor (ESPN)"])
-def obtener_cartelera_valor(
-    deporte: DeporteEnum,
-    dias: int = Query(default=2, ge=0, le=7, description="Número de días hacia adelante (0 = Hoy, máximo 7)")
-):
-    """
-    Extrae partidos y cuotas REALES de ESPN (Hoy + N días), 
-    calcula el EV cruzando con el motor y devuelve la lista ordenada cronológicamente.
-    """
+def _client() -> SportsGameOddsClient:
     try:
-        # Llamada síncrona a la función del extractor (ahora basada en requests)
-        resultado = obtener_cartelera_con_valor(deporte.value, dias=dias)
-        
-        cartelera = resultado.get("cartelera", [])
-        
-        return {
-            "deporte": deporte.value,
-            "rango_fechas": resultado.get("rango_fechas", ""),
-            "mensaje": resultado.get("mensaje", ""),
-            "total_partidos_analizados": len(cartelera),
-            "partidos_con_valor_positivo": sum(1 for p in cartelera if p.get("tiene_valor_positivo", False)),
-            "cartelera": cartelera  # Ya viene ordenada cronológicamente desde el extractor
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error crítico al generar la cartelera: {str(e)}")
+        return SportsGameOddsClient()
+    except (ProviderConfigurationError, ValueError) as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+def _provider_http_error(exc: Exception) -> HTTPException:
+    if isinstance(exc, ProviderConfigurationError):
+        return HTTPException(status_code=503, detail=str(exc))
+    if isinstance(exc, ProviderAccessError):
+        return HTTPException(status_code=502, detail=str(exc))
+    if isinstance(exc, ProviderResponseError):
+        return HTTPException(status_code=502, detail=str(exc))
+    return HTTPException(status_code=502, detail=f"Error consultando el proveedor deportivo: {exc}")
+
+
+def _get_events_cached(sport: str, days: int, live: bool | None = None) -> dict[str, Any]:
+    key = f"{sport}:{days}:{live}"
+    now = time.monotonic()
+    cached = _event_cache.get(key)
+    if cached and now - cached[0] < EVENT_CACHE_SECONDS:
+        return cached[1]
+
+    try:
+        result = _client().get_events(sport, days=days, live=live)
+    except (ProviderConfigurationError, ProviderAccessError, ProviderResponseError) as exc:
+        raise _provider_http_error(exc) from exc
+
+    result["cache_segundos"] = EVENT_CACHE_SECONDS
+    _event_cache[key] = (now, result)
+    for event in result.get("eventos", []):
+        event_id = str(event.get("evento_id") or "")
+        if event_id:
+            _market_cache[event_id] = (now, {
+                "fuente": result["fuente"],
+                "evento_id": event_id,
+                "total_mercados": event.get("mercados_disponibles", 0),
+                "mercados": event.get("mercados", []),
+                "uso": result.get("uso", {}),
+            })
+    return result
+
+
+def _get_markets_cached(event_id: str) -> dict[str, Any]:
+    now = time.monotonic()
+    cached = _market_cache.get(event_id)
+    if cached and now - cached[0] < MARKET_CACHE_SECONDS:
+        return cached[1]
+
+    try:
+        result = _client().get_event(event_id)
+    except (ProviderConfigurationError, ProviderAccessError, ProviderResponseError) as exc:
+        raise _provider_http_error(exc) from exc
+
+    result["cache_segundos"] = MARKET_CACHE_SECONDS
+    _market_cache[event_id] = (now, result)
+    return result
+
+
+def _historical_data() -> dict[str, Any]:
+    global _model_data_cache
+    now = time.monotonic()
+    if _model_data_cache and now - _model_data_cache[0] < 300:
+        return _model_data_cache[1]
+    data = cargar_datos(str(DATOS_DIR))
+    _model_data_cache = (now, data)
+    return data
+
+
+def _model_probabilities(sport: str, home: str, away: str) -> tuple[dict[str, Any], str | None]:
+    try:
+        prediction = predecir_partido(sport, home, away, _historical_data())
+    except Exception as exc:
+        return {}, f"No fue posible ejecutar el modelo: {type(exc).__name__}"
+    if "error" in prediction:
+        return {}, str(prediction["error"])
+
+    output = {}
+    for key, target in (
+        ("prob_victoria_local", "local"),
+        ("prob_empate", "empate"),
+        ("prob_victoria_visitante", "visitante"),
+    ):
+        value = prediction.get(key)
+        if isinstance(value, (float, int)):
+            output[target] = round(float(value) * 100.0, 1)
+    return output, None
+
+
+def _main_market_prices(event: dict[str, Any]) -> dict[str, float | None]:
+    result: dict[str, float | None] = {"local": None, "empate": None, "visitante": None}
+    markets = event.get("mercados") or []
+    candidates = [
+        market for market in markets
+        if any(token in str(market.get("nombre", "")).casefold() for token in ("moneyline", "match winner", "ganador"))
+    ]
+    for market in candidates:
+        for selection in market.get("selecciones", []):
+            side = str(selection.get("lado") or "").casefold()
+            target = {"home": "local", "draw": "empate", "away": "visitante"}.get(side)
+            if not target:
+                continue
+            best = selection.get("mejor_cuota") or {}
+            price = best.get("cuota_decimal")
+            if isinstance(price, (float, int)) and (result[target] is None or price > result[target]):
+                result[target] = float(price)
+    return result
+
+
+def _event_for_legacy_card(event: dict[str, Any], sport: str) -> dict[str, Any]:
+    probabilities, model_error = _model_probabilities(
+        sport, str(event.get("local") or ""), str(event.get("visitante") or "")
+    )
+    odds = _main_market_prices(event)
+    ev = {}
+    for key, probability_key in (
+        ("local", "local"), ("empate", "empate"), ("visitante", "visitante")
+    ):
+        probability = probabilities.get(probability_key)
+        price = odds.get(key)
+        if probability is not None and price is not None:
+            ev[key] = calcular_valor_ev(probability, price)
+
+    return {
+        "evento_id": event.get("evento_id"),
+        "deporte": sport,
+        "liga": event.get("liga"),
+        "fecha_hora": event.get("fecha_hora"),
+        "local": event.get("local"),
+        "visitante": event.get("visitante"),
+        "estado_evento": event.get("estado_evento"),
+        "en_vivo": event.get("en_vivo", False),
+        "fuente_eventos": event.get("fuente_eventos"),
+        "fuente_cuotas": event.get("fuente_cuotas"),
+        "cuotas": odds,
+        "probabilidades_modelo": probabilities,
+        "modelo_disponible": bool(probabilities),
+        "error_modelo": model_error,
+        "analisis_ev": ev,
+        "mercados_disponibles": event.get("mercados_disponibles", 0),
+        "tiene_valor_positivo": any(item.get("es_valor_positivo") for item in ev.values()),
+    }
+
+
+@app.get("/health", tags=["General"])
+def health():
+    return {
+        "estado": "ok",
+        "aplicacion": "AppApuestas",
+        "version": VERSION,
+        "hora_utc": datetime.now(timezone.utc).isoformat(),
+        "proveedor": provider_status(),
+        "datasets": {
+            f"{sport}_resultados.csv": (DATOS_DIR / f"{sport}_resultados.csv").exists()
+            for sport in ("futbol", "nba", "nfl", "mlb")
+        },
+    }
+
+
+@app.get("/api/info", tags=["General"])
+def api_info():
+    return {
+        "mensaje": "AppApuestas API activa",
+        "documentacion": "/docs",
+        "interfaz": "/",
+        "version": VERSION,
+        "deportes": [sport.value for sport in SportEnum],
+    }
+
+
+@app.get("/api/v1/source/status", tags=["Proveedor"])
+def source_status():
+    return provider_status()
+
+
+@app.get("/api/v1/sports", tags=["Proveedor"])
+def sports():
+    return {
+        "deportes": [
+            {"id": "futbol", "nombre": "Fútbol"},
+            {"id": "nba", "nombre": "NBA"},
+            {"id": "nfl", "nombre": "NFL"},
+            {"id": "mlb", "nombre": "MLB"},
+        ],
+        "ligas_configuradas": provider_status()["ligas"],
+    }
+
+
+@app.get("/api/v1/events", tags=["Eventos"])
+def events(
+    deporte: SportEnum = Query(...),
+    dias: int = Query(default=2, ge=0, le=7),
+    live: bool | None = Query(default=None),
+):
+    result = _get_events_cached(deporte.value, dias, live)
+    return {
+        "fuente": result["fuente"],
+        "deporte": result["deporte"],
+        "ligas_consultadas": result["ligas_consultadas"],
+        "generado_en": result["generado_en"],
+        "total_eventos": result["total_eventos"],
+        "eventos_en_vivo": result["eventos_en_vivo"],
+        "eventos_programados": result["eventos_programados"],
+        "cache_segundos": result["cache_segundos"],
+        "uso": result.get("uso", {}),
+        "eventos": result["eventos"],
+    }
+
+
+@app.get("/api/v1/events/{event_id}/markets", tags=["Mercados"])
+def event_markets(event_id: str):
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,100}", event_id):
+        raise HTTPException(status_code=400, detail="Identificador de evento no válido.")
+    return _get_markets_cached(event_id)
+
+
+@app.get("/cartelera/{deporte}", tags=["Cartelera"])
+def cartelera(
+    deporte: SportEnum,
+    dias: int = Query(default=2, ge=0, le=7),
+):
+    result = _get_events_cached(deporte.value, dias)
+    cards = [_event_for_legacy_card(event, deporte.value) for event in result["eventos"]]
+    start = datetime.now(timezone.utc).date()
+    end = start + timedelta(days=dias)
+    return {
+        "deporte": deporte.value,
+        "fuente": result["fuente"],
+        "rango_fechas": f"{start:%Y%m%d}-{end:%Y%m%d}",
+        "mensaje": (
+            f"Datos consultados en {result['fuente']}. "
+            "Abre el detalle de un evento para consultar los mercados y las casas disponibles."
+        ),
+        "total_partidos_analizados": len(cards),
+        "total_con_probabilidades": sum(1 for item in cards if item["modelo_disponible"]),
+        "total_con_cuotas": sum(1 for item in cards if any(item["cuotas"].values())),
+        "partidos_con_valor_positivo": sum(1 for item in cards if item["tiene_valor_positivo"]),
+        "uso": result.get("uso", {}),
+        "cartelera": cards,
+    }
+
+
+@app.get("/equipos/{deporte}", tags=["Históricos"])
+def equipos(deporte: SportEnum):
+    data = _historical_data()
+    frame = data.get(deporte.value)
+    if frame is None or frame.empty:
+        raise HTTPException(status_code=404, detail="No hay datos históricos para este deporte.")
+    names = sorted(
+        set(frame["equipo_local"].dropna().astype(str).unique())
+        | set(frame["equipo_visitante"].dropna().astype(str).unique())
+    )
+    return {"deporte": deporte.value, "total_equipos": len(names), "equipos": names}
+
+
+@app.get("/predecir", tags=["Modelo"])
+def predict(
+    deporte: SportEnum,
+    local: str = Query(min_length=1, max_length=100),
+    visitante: str = Query(min_length=1, max_length=100),
+    cuota_local: float | None = Query(default=None, gt=1),
+    cuota_empate: float | None = Query(default=None, gt=1),
+    cuota_visitante: float | None = Query(default=None, gt=1),
+):
+    try:
+        prediction = predecir_partido(deporte.value, local.strip(), visitante.strip(), _historical_data())
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Error del modelo: {type(exc).__name__}") from exc
+    if "error" in prediction:
+        raise HTTPException(status_code=400, detail=prediction["error"])
+
+    ev = {}
+    probabilities = {
+        "local": prediction.get("prob_victoria_local"),
+        "empate": prediction.get("prob_empate"),
+        "visitante": prediction.get("prob_victoria_visitante"),
+    }
+    prices = {"local": cuota_local, "empate": cuota_empate, "visitante": cuota_visitante}
+    for side, probability in probabilities.items():
+        if probability is not None and prices[side] is not None:
+            ev[side] = calcular_valor_ev(float(probability) * 100.0, float(prices[side]))
+    if ev:
+        prediction["analisis_ev"] = ev
+    return {
+        "deporte": deporte.value,
+        "partido": f"{local.strip()} vs {visitante.strip()}",
+        "prediccion": prediction,
+    }
 
 
 @app.post("/actualizar-datos", tags=["Administración"])
-def actualizar_datasets():
-    script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "extractor_datos.py")
-    if not os.path.exists(script_path):
-        raise HTTPException(status_code=500, detail="No se encontró extractor_datos.py")
+def update_historical_data():
+    import subprocess
+    import sys
 
+    script = BASE_DIR / "extractor_datos.py"
+    if not script.exists():
+        raise HTTPException(status_code=500, detail="No se encontró el extractor histórico.")
     try:
-        resultado = subprocess.run(
-            [sys.executable, script_path],
-            check=True, capture_output=True, text=True, timeout=300
+        completed = subprocess.run(
+            [sys.executable, str(script)],
+            cwd=str(BASE_DIR),
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=300,
         )
-        return {
-            "mensaje": "Datos históricos actualizados exitosamente",
-            "estado": "success",
-            "log": resultado.stdout[-300:]
-        }
-    except subprocess.CalledProcessError as e:
-        raise HTTPException(status_code=500, detail={"error": "Fallo en extractor", "stderr": e.stderr[-300:]})
-    except subprocess.TimeoutExpired:
-        raise HTTPException(status_code=504, detail="Timeout de 5 minutos excedido")
+    except subprocess.CalledProcessError as exc:
+        raise HTTPException(status_code=500, detail=(exc.stderr or "")[-1500:]) from exc
+    except subprocess.TimeoutExpired as exc:
+        raise HTTPException(status_code=504, detail="La actualización superó cinco minutos.") from exc
+    global _model_data_cache
+    _model_data_cache = None
+    return {"estado": "success", "log": completed.stdout[-1500:]}
 
 
-@app.get("/", tags=["General"])
-def root():
-    return {"mensaje": "API Predictor Deportivo Pro Activa", "documentacion": "/docs", "version": "3.1.0"}
+@app.get("/manifest.webmanifest", include_in_schema=False)
+def manifest():
+    return FileResponse(STATIC_DIR / "manifest.webmanifest", media_type="application/manifest+json")
 
 
-# ==============================================================================
-# 4. EJECUCIÓN PRINCIPAL
-# ==============================================================================
+@app.get("/service-worker.js", include_in_schema=False)
+def service_worker():
+    return FileResponse(
+        STATIC_DIR / "service-worker.js",
+        media_type="application/javascript",
+        headers={"Service-Worker-Allowed": "/"},
+    )
+
+
+@app.get("/", include_in_schema=False)
+def index():
+    if not INDEX_FILE.exists():
+        return {"mensaje": "AppApuestas API activa", "documentacion": "/docs"}
+    return FileResponse(INDEX_FILE)
+
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
-    is_production = os.environ.get("RENDER") is not None
-    print(f"🚀 Servidor corriendo en http://0.0.0.0:{port}")
-    uvicorn.run("api_servidor:app", host="0.0.0.0", port=port, reload=not is_production)
+    uvicorn.run("api_servidor:app", host="0.0.0.0", port=port, reload=os.environ.get("RENDER") is None)
