@@ -25,12 +25,13 @@ from sports_game_odds import (
 
 from integraciones_pitchapi import PitchAPIClient, PitchAPIError, pitchapi_status
 from statsbomb_open_data import StatsBombOpenData, StatsBombDataError, statsbomb_status
+from modelos_futbol import predict_from_matches
 
 BASE_DIR = Path(__file__).resolve().parent
 DATOS_DIR = BASE_DIR / "datos"
 STATIC_DIR = BASE_DIR / "static"
 INDEX_FILE = STATIC_DIR / "index.html"
-VERSION = "1.0.3"
+VERSION = "1.0.4"
 EVENT_CACHE_SECONDS = max(60, int(os.getenv("SPORTSGAMEODDS_CACHE_SECONDS", "600")))
 MARKET_CACHE_SECONDS = max(60, int(os.getenv("SPORTSGAMEODDS_MARKET_CACHE_SECONDS", "600")))
 
@@ -389,6 +390,26 @@ def research_statsbomb_match_analysis(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except StatsBombDataError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+@app.get("/api/v1/research/statsbomb/predict", tags=["Modelos"])
+def research_statsbomb_predict(
+    competition_id: int = Query(..., ge=1),
+    season_id: int = Query(..., ge=1),
+    local: str = Query(..., min_length=1, max_length=100),
+    visitante: str = Query(..., min_length=1, max_length=100),
+    rho: float = Query(default=-0.08, ge=-0.25, le=0.25),
+):
+    try:
+        matches = StatsBombOpenData().matches(competition_id, season_id)
+        result = predict_from_matches(matches, local, visitante, rho=rho)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except StatsBombDataError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    result["competicion_id"] = competition_id
+    result["temporada_id"] = season_id
+    return result
 
 
 @app.get("/api/v1/sports", tags=["Proveedor"])
