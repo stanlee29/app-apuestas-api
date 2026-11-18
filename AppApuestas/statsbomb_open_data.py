@@ -376,7 +376,7 @@ class StatsBombOpenData:
             item_home = self._team_name(item.get("home_team"))
             item_away = self._team_name(item.get("away_team"))
             has_result = item.get("home_score") is not None and item.get("away_score") is not None
-            if {item_home, item_away} == team_names and has_result:
+            if int(item.get("match_id", 0)) != match_id and {item_home, item_away} == team_names and has_result:
                 h2h.append({
                     "match_id": item.get("match_id"),
                     "date": item.get("match_date"),
