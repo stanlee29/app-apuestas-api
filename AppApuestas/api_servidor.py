@@ -1,95 +1,140 @@
 """
-Módulo: api_servidor.py
-Descripción: Backend FastAPI sincronizado con extractor_ganaplay.py (ESPN API).
-             Incluye menú desplegable de deportes, análisis de EV y ordenamiento cronológico.
-             Compatible con Python 3.14 y entornos serverless (Render).
+API FastAPI para EdgeBet.
+Sirve la interfaz PWA y expone endpoints de cartelera, equipos y predicciones.
 """
-
 import os
 import sys
 import subprocess
+from datetime import datetime, timezone
+from pathlib import Path
 from enum import Enum
+
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 import uvicorn
 
-# Importaciones del motor predictivo
 from motor_probabilidades import predecir_partido, cargar_datos, calcular_valor_ev
-
-# Importación de la función síncrona del extractor actualizado
 from extractor_ganaplay import obtener_cartelera_con_valor
 
-# ==============================================================================
-# ENUM PARA MENÚ DESPLEGABLE EN /docs
-# ==============================================================================
+BASE_DIR = Path(__file__).resolve().parent
+DATOS_DIR = BASE_DIR / "datos"
+STATIC_DIR = BASE_DIR / "static"
+INDEX_FILE = STATIC_DIR / "index.html"
+VERSION = "0.1.0"
+
+
 class DeporteEnum(str, Enum):
     nba = "nba"
     nfl = "nfl"
     mlb = "mlb"
     futbol = "futbol"
 
-# ==============================================================================
-# 1. CONFIGURACIÓN DE LA APLICACIÓN Y CORS
-# ==============================================================================
+
 app = FastAPI(
-    title="API Predictor Deportivo Pro",
-    description="Backend para consulta de equipos, predicciones estadísticas y cartelera en tiempo real vía ESPN API.",
-    version="3.1.0"
+    title="EdgeBet API",
+    description="API de análisis deportivo y probabilidades estimadas. Las cuotas solo se muestran cuando la fuente las proporciona.",
+    version=VERSION,
 )
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
+    allow_credentials=False,
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
 
-# ==============================================================================
-# 2. EVENTO DE INICIO AUTOMÁTICO (STARTUP)
-# ==============================================================================
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+
 @app.on_event("startup")
-def verificar_y_descargar_datos():
-    """Auto-arranque: descarga datos históricos si no existen en la carpeta /datos."""
-    datos_dir = "datos"
-    archivos = ["nba_resultados.csv", "nfl_resultados.csv", "mlb_resultados.csv", "futbol_resultados.csv"]
+def verificar_datos_historicos():
+    """Intenta preparar los CSV si faltan. No genera resultados ficticios."""
+    archivos = [
+        "nba_resultados.csv",
+        "nfl_resultados.csv",
+        "mlb_resultados.csv",
+        "futbol_resultados.csv",
+    ]
+    faltantes = [nombre for nombre in archivos if not (DATOS_DIR / nombre).exists()]
+    if not faltantes:
+        return
 
-    if not os.path.exists(datos_dir) or not all(os.path.exists(os.path.join(datos_dir, f)) for f in archivos):
-        print("⚠️ Arranque sin datos históricos. Ejecutando extractor automático...")
-        script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "extractor_datos.py")
-        try:
-            subprocess.run([sys.executable, script_path], check=True, capture_output=True, text=True, timeout=300)
-            print("✅ Descarga automática de datos históricos completada.")
-        except Exception as e:
-            print(f"❌ Error en arranque automático de datos: {e}")
+    script_path = BASE_DIR / "extractor_datos.py"
+    if not script_path.exists():
+        print(f"⚠️ No se encontró el extractor histórico. Faltan: {faltantes}")
+        return
 
-# ==============================================================================
-# 3. ENDPOINTS
-# ==============================================================================
+    print(f"⚠️ Faltan datasets históricos: {faltantes}. Iniciando extracción.")
+    try:
+        resultado = subprocess.run(
+            [sys.executable, str(script_path)],
+            cwd=str(BASE_DIR),
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+        print(resultado.stdout[-1500:])
+    except Exception as exc:
+        print(f"⚠️ No fue posible actualizar los históricos: {exc}")
+
+
+@app.get("/health", tags=["General"])
+def health():
+    archivos = [
+        "nba_resultados.csv",
+        "nfl_resultados.csv",
+        "mlb_resultados.csv",
+        "futbol_resultados.csv",
+    ]
+    return {
+        "estado": "ok",
+        "aplicacion": "EdgeBet",
+        "version": VERSION,
+        "hora_utc": datetime.now(timezone.utc).isoformat(),
+        "datasets": {nombre: (DATOS_DIR / nombre).exists() for nombre in archivos},
+    }
+
+
+@app.get("/api/info", tags=["General"])
+def informacion_api():
+    return {
+        "mensaje": "EdgeBet API activa",
+        "documentacion": "/docs",
+        "interfaz": "/",
+        "version": VERSION,
+        "deportes": [deporte.value for deporte in DeporteEnum],
+    }
+
 
 @app.get("/equipos/{deporte}", tags=["Consulta de Datos"])
 def obtener_equipos(deporte: DeporteEnum):
-    datos = cargar_datos("datos")
+    datos = cargar_datos(str(DATOS_DIR))
     df = datos.get(deporte.value)
     if df is None or df.empty:
-        raise HTTPException(status_code=404, detail="Sin datos históricos. Ejecuta POST /actualizar-datos")
+        raise HTTPException(status_code=404, detail="No hay datos históricos disponibles para este deporte.")
 
-    equipos = sorted(list(set(df['equipo_local'].dropna().astype(str).unique()) | set(df['equipo_visitante'].dropna().astype(str).unique())))
+    equipos = sorted(
+        set(df["equipo_local"].dropna().astype(str).unique())
+        | set(df["equipo_visitante"].dropna().astype(str).unique())
+    )
     return {"deporte": deporte.value, "total_equipos": len(equipos), "equipos": equipos}
 
 
 @app.get("/predecir", tags=["Motor Predictivo"])
 def predecir_resultado(
     deporte: DeporteEnum,
-    local: str,
-    visitante: str,
-    cuota_local: float = None,
-    cuota_empate: float = None,
-    cuota_visitante: float = None
+    local: str = Query(min_length=1, max_length=100),
+    visitante: str = Query(min_length=1, max_length=100),
+    cuota_local: float | None = Query(default=None, gt=1),
+    cuota_empate: float | None = Query(default=None, gt=1),
+    cuota_visitante: float | None = Query(default=None, gt=1),
 ):
-    datos = cargar_datos("datos")
-    resultado = predecir_partido(deporte.value, local, visitante, datos)
-
+    datos = cargar_datos(str(DATOS_DIR))
+    resultado = predecir_partido(deporte.value, local.strip(), visitante.strip(), datos)
     if "error" in resultado:
         raise HTTPException(status_code=400, detail=resultado["error"])
 
@@ -104,68 +149,91 @@ def predecir_resultado(
     if analisis_ev:
         resultado["analisis_apuestas"] = analisis_ev
 
-    return {"deporte": deporte.value, "partido": f"{local} vs {visitante}", "prediccion": resultado}
+    return {
+        "deporte": deporte.value,
+        "partido": f"{local.strip()} vs {visitante.strip()}",
+        "prediccion": resultado,
+    }
 
 
-@app.get("/cartelera/{deporte}", tags=["Cartelera con Valor (ESPN)"])
+@app.get("/cartelera/{deporte}", tags=["Cartelera ESPN"])
 def obtener_cartelera_valor(
     deporte: DeporteEnum,
-    dias: int = Query(default=2, ge=0, le=7, description="Número de días hacia adelante (0 = Hoy, máximo 7)")
+    dias: int = Query(default=2, ge=0, le=7),
 ):
-    """
-    Extrae partidos y cuotas REALES de ESPN (Hoy + N días), 
-    calcula el EV cruzando con el motor y devuelve la lista ordenada cronológicamente.
-    """
     try:
-        # Llamada síncrona a la función del extractor (ahora basada en requests)
         resultado = obtener_cartelera_con_valor(deporte.value, dias=dias)
-        
         cartelera = resultado.get("cartelera", [])
-        
         return {
             "deporte": deporte.value,
             "rango_fechas": resultado.get("rango_fechas", ""),
             "mensaje": resultado.get("mensaje", ""),
             "total_partidos_analizados": len(cartelera),
-            "partidos_con_valor_positivo": sum(1 for p in cartelera if p.get("tiene_valor_positivo", False)),
-            "cartelera": cartelera  # Ya viene ordenada cronológicamente desde el extractor
+            "partidos_con_valor_positivo": sum(
+                1 for partido in cartelera if partido.get("tiene_valor_positivo", False)
+            ),
+            "total_con_probabilidades": sum(
+                1 for partido in cartelera if partido.get("modelo_disponible", False)
+            ),
+            "total_con_cuotas": sum(
+                1 for partido in cartelera if partido.get("fuente_cuotas")
+            ),
+            "cartelera": cartelera,
         }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error crítico al generar la cartelera: {str(e)}")
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"No fue posible consultar la cartelera: {exc}") from exc
 
 
 @app.post("/actualizar-datos", tags=["Administración"])
 def actualizar_datasets():
-    script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "extractor_datos.py")
-    if not os.path.exists(script_path):
+    script_path = BASE_DIR / "extractor_datos.py"
+    if not script_path.exists():
         raise HTTPException(status_code=500, detail="No se encontró extractor_datos.py")
 
     try:
         resultado = subprocess.run(
-            [sys.executable, script_path],
-            check=True, capture_output=True, text=True, timeout=300
+            [sys.executable, str(script_path)],
+            cwd=str(BASE_DIR),
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=300,
         )
         return {
-            "mensaje": "Datos históricos actualizados exitosamente",
+            "mensaje": "Proceso de actualización finalizado",
             "estado": "success",
-            "log": resultado.stdout[-300:]
+            "log": resultado.stdout[-1500:],
         }
-    except subprocess.CalledProcessError as e:
-        raise HTTPException(status_code=500, detail={"error": "Fallo en extractor", "stderr": e.stderr[-300:]})
-    except subprocess.TimeoutExpired:
-        raise HTTPException(status_code=504, detail="Timeout de 5 minutos excedido")
+    except subprocess.CalledProcessError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "Falló la extracción histórica", "stderr": (exc.stderr or "")[-1500:]},
+        ) from exc
+    except subprocess.TimeoutExpired as exc:
+        raise HTTPException(status_code=504, detail="La actualización excedió cinco minutos.") from exc
 
 
-@app.get("/", tags=["General"])
-def root():
-    return {"mensaje": "API Predictor Deportivo Pro Activa", "documentacion": "/docs", "version": "3.1.0"}
+@app.get("/manifest.webmanifest", include_in_schema=False)
+def manifest():
+    return FileResponse(STATIC_DIR / "manifest.webmanifest", media_type="application/manifest+json")
 
 
-# ==============================================================================
-# 4. EJECUCIÓN PRINCIPAL
-# ==============================================================================
+@app.get("/service-worker.js", include_in_schema=False)
+def service_worker():
+    return FileResponse(
+        STATIC_DIR / "service-worker.js",
+        media_type="application/javascript",
+        headers={"Service-Worker-Allowed": "/"},
+    )
+
+
+@app.get("/", include_in_schema=False)
+def inicio():
+    if not INDEX_FILE.exists():
+        return {"mensaje": "EdgeBet API activa", "documentacion": "/docs"}
+    return FileResponse(INDEX_FILE)
+
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
-    is_production = os.environ.get("RENDER") is not None
-    print(f"🚀 Servidor corriendo en http://0.0.0.0:{port}")
-    uvicorn.run("api_servidor:app", host="0.0.0.0", port=port, reload=not is_production)
+    uvicorn.run("api_servidor:app", host="0.0.0.0", port=port, reload=os.environ.get("RENDER") is None)
