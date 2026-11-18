@@ -117,7 +117,14 @@ class StatsBombOpenData:
 
     @staticmethod
     def _team_name(value: Any) -> str:
-        return str(value.get("name") or "") if isinstance(value, dict) else str(value or "")
+        if isinstance(value, dict):
+            return str(
+                value.get("name")
+                or value.get("home_team_name")
+                or value.get("away_team_name")
+                or ""
+            )
+        return str(value or "")
 
     @staticmethod
     def _event_location(event: dict[str, Any]) -> tuple[float, float] | None:
@@ -255,7 +262,8 @@ class StatsBombOpenData:
         for item in matches:
             item_home = self._team_name(item.get("home_team"))
             item_away = self._team_name(item.get("away_team"))
-            if {item_home, item_away} == team_names and item.get("match_status") == "available":
+            has_result = item.get("home_score") is not None and item.get("away_score") is not None
+            if {item_home, item_away} == team_names and has_result:
                 h2h.append({
                     "match_id": item.get("match_id"),
                     "date": item.get("match_date"),
