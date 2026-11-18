@@ -88,8 +88,10 @@ def predict_from_matches(
     rows: list[dict[str, Any]] = []
     names: dict[str, str] = {}
     for raw in matches:
-        if not isinstance(raw, dict) or raw.get("match_status") != "available":
+        if not isinstance(raw, dict):
             continue
+        # El modelo de marcadores puede usar todo resultado publicado,
+        # aunque StatsBomb no haya liberado el feed de eventos de ese partido.
         home = _team_name(raw.get("home_team"))
         away = _team_name(raw.get("away_team"))
         try:
@@ -236,4 +238,161 @@ def predict_from_matches(
         "h2h_reciente": recent_h2h,
         "parametros": {"rho": rho, "half_life_days": half_life_days, "prior_games": prior_games},
         "advertencias": warnings,
+    }
+
+def evaluate_walk_forward(
+    matches: list[dict[str, Any]],
+    min_train: int = 30,
+    rho: float = -0.08,
+) -> dict[str, Any]:
+    """Evalúa predicciones cronológicas: cada partido usa solo resultados anteriores."""
+    if not 20 <= min_train <= 500:
+        raise ValueError("min_train debe estar entre 20 y 500.")
+    if not -0.25 <= rho <= 0.25:
+        raise ValueError("rho debe estar entre -0.25 y 0.25.")
+
+    prepared = []
+    for raw in matches:
+        if not isinstance(raw, dict):
+            continue
+        match_date = _parse_date(raw.get("match_date"))
+        if match_date is None:
+            continue
+        try:
+            home_score = int(raw["home_score"])
+            away_score = int(raw["away_score"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if home_score < 0 or away_score < 0:
+            continue
+        home = _team_name(raw.get("home_team"))
+        away = _team_name(raw.get("away_team"))
+        if not home or not away:
+            continue
+        prepared.append({
+            **raw,
+            "_parsed_date": match_date,
+            "home_score": home_score,
+            "away_score": away_score,
+        })
+
+    prepared.sort(key=lambda item: (
+        item["_parsed_date"],
+        str(item.get("kick_off") or ""),
+        int(item.get("match_id") or 0),
+    ))
+
+    predictions = []
+    skipped_insufficient = 0
+    skipped_unmodelled = 0
+    for index, target in enumerate(prepared):
+        target_date = target["_parsed_date"]
+        # Exclusión de todo el día objetivo para impedir fuga temporal.
+        train = [
+            row for row in prepared[:index]
+            if row["_parsed_date"] < target_date
+        ]
+        if len(train) < min_train:
+            skipped_insufficient += 1
+            continue
+        try:
+            prediction = predict_from_matches(
+                train,
+                _team_name(target.get("home_team")),
+                _team_name(target.get("away_team")),
+                rho=rho,
+            )
+        except ValueError:
+            skipped_unmodelled += 1
+            continue
+
+        probabilities = prediction["probabilidades_1x2_pct"]
+        p_home = probabilities["local"] / 100.0
+        p_draw = probabilities["empate"] / 100.0
+        p_away = probabilities["visitante"] / 100.0
+        actual = (
+            0 if target["home_score"] > target["away_score"]
+            else 1 if target["home_score"] == target["away_score"]
+            else 2
+        )
+        vector = [1.0 if actual == outcome else 0.0 for outcome in range(3)]
+        probs = [p_home, p_draw, p_away]
+        brier = sum((probs[i] - vector[i]) ** 2 for i in range(3))
+        logloss = -math.log(max(1e-15, probs[actual]))
+        predicted = max(range(3), key=lambda i: probs[i])
+        predictions.append({
+            "fecha": target_date.isoformat(),
+            "local": _team_name(target.get("home_team")),
+            "visitante": _team_name(target.get("away_team")),
+            "probabilidades": probabilities,
+            "resultado_real": ("local", "empate", "visitante")[actual],
+            "resultado_estimado": ("local", "empate", "visitante")[predicted],
+            "acierto": predicted == actual,
+            "brier": brier,
+            "log_loss": logloss,
+        })
+
+    count = len(predictions)
+    if count == 0:
+        return {
+            "modelo": "Poisson + Dixon-Coles",
+            "metodo": "walk-forward cronológico sin datos del día objetivo",
+            "estado": "muestra_insuficiente",
+            "partidos_evaluados": 0,
+            "min_train": min_train,
+            "partidos_saltados_muestra": skipped_insufficient,
+            "partidos_saltados_equipos": skipped_unmodelled,
+            "metricas": None,
+            "predicciones": [],
+            "advertencia": "No hubo suficientes partidos anteriores para evaluar el modelo.",
+        }
+
+    avg_brier = sum(item["brier"] for item in predictions) / count
+    avg_logloss = sum(item["log_loss"] for item in predictions) / count
+    accuracy = sum(1 for item in predictions if item["acierto"]) / count
+
+    # Calibración por rangos de la probabilidad del resultado elegido por el modelo.
+    calibration = []
+    for lower, upper in ((0.0, 0.4), (0.4, 0.5), (0.5, 0.6), (0.6, 0.7), (0.7, 0.8), (0.8, 1.01)):
+        bucket = []
+        for item in predictions:
+            selected_probability = max(item["probabilidades"].values()) / 100.0
+            if lower <= selected_probability < upper:
+                bucket.append(item)
+        if bucket:
+            calibration.append({
+                "rango_probabilidad": f"{int(lower * 100)}-{min(100, int(upper * 100))}%",
+                "partidos": len(bucket),
+                "probabilidad_media_pct": round(
+                    sum(max(item["probabilidades"].values()) for item in bucket) / len(bucket), 2
+                ),
+                "aciertos_pct": round(
+                    100 * sum(1 for item in bucket if item["acierto"]) / len(bucket), 2
+                ),
+            })
+
+    if count < 30:
+        status = "exploratorio_muestra_pequena"
+        warning = "Menos de 30 predicciones fuera de muestra: las métricas son muy inestables."
+    else:
+        status = "backtest_fuera_de_muestra"
+        warning = "Backtest cronológico de una sola competición/temporada; no demuestra rentabilidad ni generalización a otras temporadas."
+
+    return {
+        "modelo": "Poisson + corrección Dixon-Coles",
+        "metodo": "walk-forward cronológico sin datos del día objetivo",
+        "estado": status,
+        "partidos_evaluados": count,
+        "min_train": min_train,
+        "partidos_saltados_muestra": skipped_insufficient,
+        "partidos_saltados_equipos": skipped_unmodelled,
+        "metricas": {
+            "brier_multiclase": round(avg_brier, 5),
+            "log_loss": round(avg_logloss, 5),
+            "accuracy": round(accuracy * 100, 2),
+            "accuracy_unidad": "porcentaje",
+        },
+        "calibracion": calibration,
+        "predicciones": predictions[-100:],
+        "advertencia": warning,
     }
