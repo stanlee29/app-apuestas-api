@@ -1,7 +1,7 @@
 import unittest
 from datetime import date, timedelta
 
-from modelos_futbol import dixon_coles_tau, predict_from_matches, poisson_pmf
+from modelos_futbol import dixon_coles_tau, evaluate_walk_forward, predict_from_matches, poisson_pmf
 
 
 def make_matches():
@@ -54,6 +54,15 @@ class FootballModelTests(unittest.TestCase):
         self.assertEqual(result["metodo_tasas_goles"], "xG reciente + goles reales")
         self.assertEqual(result["xg_reciente"]["lambda_home"], 1.8)
         self.assertGreater(result["goles_esperados"]["local"], 0.0)
+
+    def test_walk_forward_reports_out_of_sample_metrics(self):
+        result = evaluate_walk_forward(make_matches(), min_train=20)
+        self.assertGreater(result["partidos_evaluados"], 0)
+        self.assertIn("brier_multiclase", result["metricas"])
+        self.assertIn("log_loss", result["metricas"])
+        self.assertIn("accuracy", result["metricas"])
+        self.assertEqual(result["metodo"], "walk-forward cronológico sin datos del día objetivo")
+        self.assertTrue(all("fecha" in row for row in result["predicciones"]))
 
     def test_rejects_same_team(self):
         with self.assertRaises(ValueError):
