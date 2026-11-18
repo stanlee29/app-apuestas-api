@@ -43,3 +43,43 @@ La clave solo se almacena en Render. Nunca debe añadirse a Flutter, a archivos 
 El catálogo documentado de PitchAPI anuncia 77 ligas y cobertura histórica desde 2021. No todos los partidos tienen necesariamente xG, heatmaps o analítica avanzada; la respuesta informa qué bloques están disponibles. PitchAPI es una fuente de fútbol, no sustituye a las fuentes de cuotas ni cubre por sí sola los demás deportes.
 
 Las métricas xG de PitchAPI conservan su propia metodología. No se deben sumar o mezclar con xG de otros proveedores como si fueran una misma métrica.
+
+## Catálogo y analítica histórica gratuita
+
+### StatsBomb Open Data (sin clave)
+
+La API expone:
+- `GET /api/v1/research/statsbomb/competitions`: competiciones y temporadas abiertas publicadas.
+- `GET /api/v1/research/statsbomb/competitions/{competition_id}/seasons/{season_id}/matches`: partidos de esa temporada.
+- `GET /api/v1/research/statsbomb/matches/{match_id}/analysis?competition_id=...&season_id=...`: eventos, remates, xG de cada disparo, coordenadas, mapa de actividad, corners, faltas, tarjetas y H2H de la competición/temporada.
+- `GET /api/v1/research/statsbomb/predict?competition_id=...&season_id=...&local=...&visitante=...`: modelo experimental de Poisson con corrección Dixon-Coles a partir de marcadores históricos.
+
+StatsBomb Open Data no es un feed en vivo y solo publica determinadas competiciones y temporadas. Los eventos y resultados deben atribuirse a StatsBomb en los análisis publicados. Los mapas se construyen con coordenadas de eventos registrados, no con tracking continuo de jugadores.
+
+### PitchAPI (clave gratuita)
+
+Agregar `PITCHAPI_API_KEY` como variable privada del servicio Render. El proveedor documenta 77 ligas y acceso gratuito a su catálogo e historial desde 2021. La API ofrece fixtures, remates con xG, estadísticas de equipos/jugadores, H2H, heatmaps, alineaciones, momentum y analítica avanzada cuando está disponible.
+
+Endpoints:
+- `GET /api/v1/research/status`
+- `GET /api/v1/research/football/leagues`
+- `GET /api/v1/research/football/date/{YYYY-MM-DD}?status=all`
+- `GET /api/v1/research/football/leagues/{league_id}/matches`
+- `GET /api/v1/research/football/matches/{match_id}/analysis`
+- `GET /api/v1/research/football/matches/{match_id}/live`
+
+PitchAPI es una fuente de fútbol, no proporciona por sí sola las cuotas de las casas. Su xG conserva la metodología del proveedor y no debe mezclarse como idéntico a xG de StatsBomb.
+
+### Modelo experimental
+
+El primer modelo utiliza marcadores finalizados de una temporada StatsBomb:
+- Tasas de goles locales y visitantes ponderadas por recencia (vida media inicial de 180 días).
+- Ajuste de fuerza ofensiva/defensiva de local y visitante con regularización hacia el promedio de liga.
+- Distribución Poisson con ajuste Dixon-Coles para marcadores de baja puntuación.
+- Salidas: 1X2, ambos marcan, líneas de goles 0.5 a 4.5 y ocho marcadores más probables.
+
+No usa xG históricos agregados, remates, cuotas, lesiones ni alineaciones en la estimación de goles. El parámetro rho es inicial y no está calibrado por competición; el modelo es exploratorio y aún no está validado fuera de muestra. No debe presentarse como recomendación de apuesta.
+
+### Versión
+
+API backend 1.0.4 o posterior.
