@@ -111,7 +111,8 @@ class PitchAPIClient:
             raise PitchAPIError("PitchAPI devolvió una respuesta que no es JSON.") from exc
 
         if not isinstance(payload, dict) or "error" in payload:
-            error = payload.get("error", {}) if isinstance(payload, dict) else {}
+            raw_error = payload.get("error", {}) if isinstance(payload, dict) else {}
+            error = raw_error if isinstance(raw_error, dict) else {"message": str(raw_error)}
             raise PitchAPIError(
                 str(error.get("message") or "Respuesta no válida de PitchAPI."),
                 code=str(error.get("code") or "PITCHAPI_BAD_RESPONSE"),
@@ -172,6 +173,9 @@ class PitchAPIClient:
             f"/matches/{encoded}/heatmaps", {"frame": "home_ltr"}, optional=True
         ) or {}
         advanced_data = self._get(f"/matches/{encoded}/advanced", optional=True) or {}
+        advanced_players_data = self._get(f"/matches/{encoded}/advanced/players", optional=True) or {}
+        network_data = self._get(f"/matches/{encoded}/advanced/network", optional=True) or {}
+        lineups_data = self._get(f"/matches/{encoded}/lineups", optional=True) or {}
         events_data = self._get(f"/matches/{encoded}/events", optional=True) or {}
         momentum_data = self._get(f"/matches/{encoded}/momentum", optional=True) or {}
 
@@ -238,8 +242,11 @@ class PitchAPIClient:
             "estadisticas_equipo": stats,
             "estadisticas_equipo_raw": stats_data,
             "estadisticas_jugadores": players_data.get("players", []) if isinstance(players_data, dict) else [],
+            "analitica_avanzada_jugadores": advanced_players_data.get("players", []) if isinstance(advanced_players_data, dict) else [],
             "h2h": h2h_data,
             "mapas_calor": heatmaps_data,
+            "red_pases": network_data,
+            "alineaciones": lineups_data,
             "analitica_avanzada": advanced_data,
             "eventos": events_data.get("events", []) if isinstance(events_data, dict) else [],
             "momentum": momentum_data.get("points", []) if isinstance(momentum_data, dict) else [],
@@ -250,6 +257,9 @@ class PitchAPIClient:
                 "h2h": bool(h2h_data),
                 "mapas_calor": bool(heatmaps_data),
                 "analitica_avanzada": bool(advanced_data),
+                "analitica_avanzada_jugadores": bool(advanced_players_data),
+                "red_pases": bool(network_data),
+                "alineaciones": bool(lineups_data),
                 "eventos": bool(events_data),
                 "momentum": bool(momentum_data),
             },
