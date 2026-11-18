@@ -13,10 +13,19 @@ from typing import Any
 import requests
 
 
-BASE_URL = "https://raw.githubusercontent.com/statsbomb/open-data/master/data"
+BASE_URL = "https://raw.githubusercontent.com/hudl/open-data/master/data"
 CACHE_SECONDS = 6 * 60 * 60
 _CACHE: dict[str, tuple[float, Any]] = {}
 _LOCK = threading.Lock()
+
+
+def _parse_match_date(value: Any) -> date | None:
+    if not value:
+        return None
+    try:
+        return date.fromisoformat(str(value)[:10])
+    except ValueError:
+        return None
 
 
 class StatsBombDataError(RuntimeError):
@@ -227,6 +236,31 @@ class StatsBombOpenData:
             "away_matches_with_xg": len(away_for),
             "xg_source": "StatsBomb Open Data · statsbomb_xg por remate",
         }
+
+    @staticmethod
+    def matches_before_date(matches: list[dict[str, Any]], target_date: str) -> list[dict[str, Any]]:
+        """Devuelve solo resultados finalizados con fecha estrictamente anterior.
+
+        Se excluye todo el día objetivo para no introducir partidos del mismo día
+        cuyo horario o zona horaria pudiera ser ambiguo.
+        """
+        cutoff = date.fromisoformat(target_date)
+        historical = []
+        for item in matches:
+            if not isinstance(item, dict):
+                continue
+            match_date = _parse_match_date(item.get("match_date"))
+            if match_date is None or match_date >= cutoff:
+                continue
+            if item.get("home_score") is None or item.get("away_score") is None:
+                continue
+            historical.append(item)
+        historical.sort(key=lambda item: (
+            str(item.get("match_date") or ""),
+            str(item.get("kick_off") or ""),
+            int(item.get("match_id") or 0),
+        ))
+        return historical
 
     @staticmethod
     def _team_name(value: Any) -> str:
