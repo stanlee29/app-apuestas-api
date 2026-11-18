@@ -204,3 +204,45 @@ h2 { margin: 5px 0 0; font-size: 21px; letter-spacing: -.025em; }
   .market-results { grid-template-columns: 1fr; }
   .market-count { white-space: normal; }
 }
+
+
+/* Research Engine */
+.research-nav-label { margin-top: 28px; }
+.research-link { margin-bottom: 8px; color: #a9d9d1; }
+.research-link[aria-pressed="true"] { border-color: #2d605e; color: #e9fffb; background: #16302f; box-shadow: inset 3px 0 0 var(--accent); }
+.research-view[hidden] { display: none !important; }
+.research-provider-tag { padding: 8px 11px; border: 1px solid #2e5555; border-radius: 20px; color: #9ce7d8; background: #112726; font-size: 9px; white-space: nowrap; }
+.research-explainer { padding: 13px 15px; margin-bottom: 14px; border: 1px solid #2a4052; border-radius: 9px; background: #111c2b; }
+.research-explainer strong { color: #d5e2ef; font-size: 11px; }
+.research-explainer p { margin: 6px 0 0; color: #8d9cb1; font-size: 10px; line-height: 1.6; }
+.research-controls { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 11px; padding: 15px; border: 1px solid #29394e; border-radius: 10px; background: #101a28; }
+.research-field { min-width: 0; display: flex; flex-direction: column; gap: 7px; color: #95a5b9; font-size: 9px; letter-spacing: .06em; text-transform: uppercase; }
+.research-wide { grid-column: span 2; }
+.research-field input[type="date"] { color-scheme: dark; }
+.research-actions { display: flex; flex-wrap: wrap; gap: 9px; padding: 14px 0; }
+.research-button { border: 1px solid #38766c; border-radius: 7px; padding: 10px 13px; color: #d7fff4; background: #17403c; font-size: 10px; font-weight: 750; cursor: pointer; }
+.research-button.secondary { border-color: #364a61; background: #142033; color: #c0cee0; }
+.research-button:disabled { opacity: .6; cursor: wait; }
+.research-status { padding: 11px 13px; border: 1px solid #31465a; border-radius: 8px; color: #a8b8cb; background: #111c2a; font-size: 10px; line-height: 1.55; }
+.research-status.error { border-color: #70444e; color: #ffb6b6; background: #2a1e29; }
+.research-output { display: grid; gap: 12px; padding-top: 14px; }
+.research-card { padding: 14px; border: 1px solid #2b3b50; border-radius: 10px; background: #111a28; }
+.research-card h3 { margin: 0 0 11px; color: #e1eaf4; font-size: 14px; }
+.research-card h4 { margin: 10px 0 5px; color: #aebed1; font-size: 10px; }
+.research-summary-grid { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 8px; margin-bottom: 12px; }
+.research-summary-grid > div { min-width: 0; padding: 10px; border: 1px solid #29394e; border-radius: 7px; background: #0d1724; }
+.research-summary-grid small { display: block; color: #8292a8; font-size: 8px; }
+.research-summary-grid strong { display: block; margin-top: 5px; color: #e5f2f7; font-size: 14px; overflow-wrap: anywhere; }
+.research-table-scroll { overflow-x: auto; margin: 9px 0; }
+.research-table { width: 100%; border-collapse: collapse; font-size: 9px; }
+.research-table th,.research-table td { padding: 8px; border-bottom: 1px solid #29394b; text-align: right; white-space: nowrap; }
+.research-table th:first-child,.research-table td:first-child { text-align: left; }
+.research-table th { color: #788aa1; background: #0d1724; }
+.research-table td { color: #cfdae6; }
+.research-muted { margin: 8px 0 0; color: #75869d; font-size: 9px; line-height: 1.5; }
+.research-warning { margin-top: 10px; padding: 10px 12px; border: 1px solid #60543b; border-radius: 7px; background: #282319; color: #d8c392; }
+.research-warning strong { font-size: 9px; }
+.research-warning ul { margin: 6px 0 0; padding-left: 17px; }
+.research-warning li { margin: 4px 0; font-size: 9px; line-height: 1.5; }
+@media(max-width:1000px) { .research-controls { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+@media(max-width:700px) { .research-provider-tag { display:none; } .research-controls { grid-template-columns:1fr; padding:11px; } .research-wide { grid-column:auto; } .research-actions { display:grid; grid-template-columns:1fr; } .research-summary-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }

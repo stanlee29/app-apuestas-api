@@ -58,7 +58,7 @@
     const html=[
       '<article class="event-card"><div class="event-head"><div><div class="league-name">',
       escapeHtml(event.liga||"Competición no identificada"),'</div><div class="event-time">',
-      formatKickoff(event.fecha_hora),'</div></div><span class="event-status ',live?"live":"","">',
+      formatKickoff(event.fecha_hora),'</div></div><span class="event-status ',live?"live":"",'">',
       live?"EN VIVO":"PROGRAMADO",'</span></div>',
       '<div class="teams"><div class="team"><span class="team-label">LOCAL</span><strong class="team-name" title="',
       escapeHtml(event.local),'">',escapeHtml(event.local),'</strong></div><div class="vs">VS</div>',
@@ -231,7 +231,9 @@
   }
 
   function selectSport(sport) {
-    if(!SPORTS[sport]||state.sport===sport)return;
+    if(!SPORTS[sport])return;
+    researchMode(false);
+    if(state.sport===sport)return;
     state.sport=sport;
     document.querySelectorAll("[data-sport]").forEach((button)=>{
       button.setAttribute("aria-pressed",String(button.dataset.sport===sport));
@@ -257,5 +259,279 @@
   });
   window.addEventListener("appinstalled",()=>{$("install-btn").hidden=true;state.installPrompt=null;});
   if("serviceWorker" in navigator)window.addEventListener("load",()=>navigator.serviceWorker.register("/service-worker.js").catch(()=>{}));
+
+  const researchState = { competitions: [], matches: [], selectedMatch: null, loaded: false, busy: false };
+  const researchHideSelector = ".main-content > section:not(#research-view), .main-content > .notice, .main-content > footer";
+
+  function researchName(value) {
+    if (value && typeof value === "object") return String(value.name || value.home_team_name || value.away_team_name || "");
+    return String(value || "");
+  }
+
+  function researchStatus(message, error) {
+    const el = $("research-status");
+    el.textContent = message;
+    el.className = "research-status" + (error ? " error" : "");
+  }
+
+  function researchToday() {
+    const parts = new Intl.DateTimeFormat("en", {
+      timeZone: "America/El_Salvador", year: "numeric", month: "2-digit", day: "2-digit"
+    }).formatToParts(new Date());
+    const values = {};
+    parts.forEach(part => { values[part.type] = part.value; });
+    return values.year + "-" + values.month + "-" + values.day;
+  }
+
+  async function researchGet(path) {
+    const response = await fetch(path, { cache: "no-store" });
+    let data = {};
+    try { data = await response.json(); } catch (_) {}
+    if (!response.ok) {
+      const detail = data.detail;
+      throw new Error(typeof detail === "string" ? detail :
+        (detail && (detail.mensaje || detail.message)) || ("HTTP " + response.status));
+    }
+    return data;
+  }
+
+  function researchFill(id, rows, placeholder) {
+    const select = $(id);
+    select.innerHTML = '<option value="">' + escapeHtml(placeholder) + "</option>" +
+      rows.map(row => '<option value="' + escapeHtml(row.value) + '">' + escapeHtml(row.label) + "</option>").join("");
+    select.disabled = rows.length === 0;
+  }
+
+  async function researchLoadCatalog() {
+    if (researchState.busy) return;
+    researchState.busy = true;
+    $("research-refresh").disabled = true;
+    researchStatus("Consultando competiciones históricas StatsBomb…");
+    try {
+      const data = await researchGet("/api/v1/research/statsbomb/competitions");
+      researchState.competitions = Array.isArray(data.competiciones) ? data.competiciones : [];
+      researchFill("research-competition", researchState.competitions.map(comp => ({
+        value: comp.competition_id,
+        label: (comp.country_name ? comp.country_name + " · " : "") + comp.competition_name
+      })), "Selecciona competición");
+      researchState.loaded = true;
+      if (researchState.competitions.length) {
+        $("research-competition").value = String(researchState.competitions[0].competition_id);
+        await researchLoadSeasons();
+        researchStatus("Catálogo cargado: " + researchState.competitions.length + " competiciones. La cobertura varía por temporada.");
+      } else researchStatus("No hay competiciones disponibles en StatsBomb.", true);
+    } catch (error) {
+      researchStatus("No se pudo cargar el catálogo: " + error.message, true);
+    } finally {
+      researchState.busy = false;
+      $("research-refresh").disabled = false;
+    }
+  }
+
+  async function researchLoadSeasons() {
+    const comp = researchState.competitions.find(item => String(item.competition_id) === $("research-competition").value);
+    researchState.matches = [];
+    researchState.selectedMatch = null;
+    researchFill("research-season", [], "Selecciona temporada");
+    researchFill("research-match", [], "Selecciona partido histórico");
+    researchFill("research-home", [], "Selecciona equipo local");
+    researchFill("research-away", [], "Selecciona equipo visitante");
+    $("research-output").innerHTML = "";
+    if (!comp) return;
+    const seasons = Array.isArray(comp.seasons) ? comp.seasons : [];
+    researchFill("research-season", seasons.map(season => ({
+      value: season.season_id, label: season.season_name || String(season.season_id)
+    })), "Selecciona temporada");
+    if (seasons.length) {
+      $("research-season").value = String(seasons[0].season_id);
+      await researchLoadMatches();
+    }
+  }
+
+  async function researchLoadMatches() {
+    const comp = $("research-competition").value;
+    const season = $("research-season").value;
+    researchFill("research-match", [], "Cargando partidos…");
+    researchFill("research-home", [], "Cargando equipos…");
+    researchFill("research-away", [], "Cargando equipos…");
+    researchState.matches = [];
+    researchState.selectedMatch = null;
+    if (!comp || !season) return;
+    researchStatus("Cargando partidos históricos y equipos…");
+    try {
+      const data = await researchGet("/api/v1/research/statsbomb/competitions/" +
+        encodeURIComponent(comp) + "/seasons/" + encodeURIComponent(season) + "/matches");
+      researchState.matches = Array.isArray(data.partidos) ? data.partidos : [];
+      const teams = new Map();
+      researchState.matches.forEach(match => {
+        const home = researchName(match.home_team) || String(match.home_team_name || "");
+        const away = researchName(match.away_team) || String(match.away_team_name || "");
+        if (home) teams.set(home.toLowerCase(), home);
+        if (away) teams.set(away.toLowerCase(), away);
+      });
+      const teamRows = Array.from(teams.values()).sort((a,b) => a.localeCompare(b,"es"))
+        .map(name => ({ value:name, label:name }));
+      researchFill("research-home", teamRows, "Selecciona equipo local");
+      researchFill("research-away", teamRows, "Selecciona equipo visitante");
+      const matches = researchState.matches.map(match => {
+        const home = researchName(match.home_team) || String(match.home_team_name || "");
+        const away = researchName(match.away_team) || String(match.away_team_name || "");
+        const score = match.home_score == null ? "" : " · " + match.home_score + "-" + match.away_score;
+        return { value:match.match_id, label:(match.match_date || "Sin fecha") + " · " + home + " vs " + away + score };
+      });
+      researchFill("research-match", matches, "Selecciona partido histórico");
+      researchStatus(researchState.matches.length + " partidos y " + teamRows.length + " equipos cargados.");
+    } catch (error) {
+      researchStatus("No se pudieron cargar los partidos: " + error.message, true);
+    }
+  }
+
+  function researchSelectMatch() {
+    const match = researchState.matches.find(item => String(item.match_id) === $("research-match").value);
+    researchState.selectedMatch = match || null;
+    if (!match) return;
+    $("research-home").value = researchName(match.home_team) || String(match.home_team_name || "");
+    $("research-away").value = researchName(match.away_team) || String(match.away_team_name || "");
+    $("research-date").value = String(match.match_date || "").slice(0,10);
+  }
+
+  function researchInputs() {
+    const data = {
+      competition_id: $("research-competition").value,
+      season_id: $("research-season").value,
+      fecha_partido: $("research-date").value,
+      local: $("research-home").value,
+      visitante: $("research-away").value
+    };
+    if (!data.competition_id || !data.season_id || !data.fecha_partido || !data.local || !data.visitante)
+      throw new Error("Completa competición, temporada, fecha y equipos.");
+    if (data.local === data.visitante) throw new Error("Los equipos deben ser diferentes.");
+    return data;
+  }
+
+  function researchTable(headers, rows) {
+    return '<div class="research-table-scroll"><table class="research-table"><thead><tr>' +
+      headers.map(item => "<th>" + escapeHtml(item) + "</th>").join("") + "</tr></thead><tbody>" +
+      rows.map(row => "<tr>" + row.map(item => "<td>" + escapeHtml(item) + "</td>").join("") + "</tr>").join("") +
+      "</tbody></table></div>";
+  }
+
+  function researchWarnings(items) {
+    if (!Array.isArray(items) || !items.length) return "";
+    return '<div class="research-warning"><strong>Advertencias</strong><ul>' +
+      items.map(item => "<li>" + escapeHtml(item) + "</li>").join("") + "</ul></div>";
+  }
+
+  function researchCard(title, body) {
+    return '<section class="research-card"><h3>' + escapeHtml(title) + "</h3>" + body + "</section>";
+  }
+
+  async function researchCalculate(kind) {
+    let params;
+    try { params = researchInputs(); }
+    catch (error) { researchStatus(error.message, true); return; }
+    const id = kind === "goals" ? "research-goals" : "research-counts";
+    const button = $(id), previous = button.textContent;
+    button.disabled = true; button.textContent = "Calculando…";
+    researchStatus(kind === "goals" ? "Calculando Poisson + Dixon-Coles…" : "Procesando eventos para remates, córners, faltas y tarjetas…");
+    try {
+      if (kind === "counts") params.ventana = $("research-window").value;
+      const query = new URLSearchParams(params);
+      const route = kind === "goals" ? "predict" : "markets-predict";
+      const data = await researchGet("/api/v1/research/statsbomb/" + route + "?" + query.toString());
+      $("research-output").innerHTML = kind === "goals" ? researchGoalsHtml(data) : researchCountsHtml(data);
+      researchStatus("Cálculo terminado. Revisa la muestra y las advertencias antes de interpretar los porcentajes.");
+    } catch (error) {
+      researchStatus("No se pudo calcular: " + error.message, true);
+    } finally {
+      button.disabled = false; button.textContent = previous;
+    }
+  }
+
+  function researchGoalsHtml(data) {
+    const p = data.probabilidades_1x2_pct || {};
+    const g = data.goles_esperados || {};
+    const b = data.ambos_marcan_pct || {};
+    const summary = [["Local",p.local],["Empate",p.empate],["Visitante",p.visitante],
+      ["Goles esperados local",g.local],["Goles esperados visitante",g.visitante],["Ambos marcan",b.si]]
+      .map(item => '<div><small>' + escapeHtml(item[0]) + '</small><strong>' +
+        escapeHtml(item[1] == null ? "—" : Number(item[1]).toFixed(1) + (item[0].includes("marcan") || item[0] === "Local" || item[0] === "Empate" || item[0] === "Visitante" ? "%" : "")) +
+        "</strong></div>").join("");
+    const totals = Object.entries(data.totales_goles_pct || {}).map(entry =>
+      [entry[0],Number(entry[1].over).toFixed(1)+"%",Number(entry[1].under).toFixed(1)+"%"]);
+    const scores = (data.marcadores_mas_probables || []).map(item =>
+      [item.marcador,Number(item.probabilidad_pct).toFixed(1)+"%"]);
+    return researchCard("Poisson + Dixon-Coles · " + (data.estado_validacion || "exploratorio"),
+      '<div class="research-summary-grid">' + summary + "</div>" +
+      "<h4>Probabilidades de goles</h4>" + researchTable(["Línea","Over","Under"],totals) +
+      "<h4>Marcadores probables</h4>" + researchTable(["Marcador","Probabilidad"],scores) +
+      researchWarnings(data.advertencias));
+  }
+
+  function researchCountsHtml(data) {
+    let html = researchCard("Muestra · " + (data.estado_validacion || "experimental"),
+      '<div class="research-summary-grid">' +
+      [["Local en casa",data.muestra?.local_en_casa],["Visitante fuera",data.muestra?.visitante_fuera],
+       ["Omitidos",data.muestra?.partidos_omitidos],["Ventana",data.muestra?.ventana_solicitada_por_equipo]]
+      .map(item => '<div><small>' + escapeHtml(item[0]) + '</small><strong>' + escapeHtml(item[1] ?? "—") + "</strong></div>").join("") +
+      "</div>" + researchWarnings(data.advertencias));
+    Object.entries(data.mercados || {}).forEach(entry => {
+      const market = entry[1];
+      ["local","visitante","total_partido"].forEach(side => {
+        const item = market[side] || {};
+        const rows = (item.lineas || []).map(line =>
+          [line.linea,Number(line.over_pct).toFixed(1)+"%",Number(line.under_pct).toFixed(1)+"%"]);
+        const sideName = side === "local" ? "Local" : side === "visitante" ? "Visitante" : "Total partido";
+        html += researchCard((market.nombre || entry[0]) + " · " + sideName + " · Media " + (item.media_esperada ?? "—"),
+          researchTable(["Línea","Over","Under"],rows));
+      });
+    });
+    return html;
+  }
+
+  async function researchAnalyse() {
+    const match = researchState.selectedMatch;
+    if (!match) { researchStatus("Selecciona un partido histórico primero.", true); return; }
+    const button = $("research-analysis"), previous = button.textContent;
+    button.disabled = true; button.textContent = "Analizando…";
+    researchStatus("Consultando xG, remates y estadísticas del partido…");
+    try {
+      const query = new URLSearchParams({
+        competition_id:$("research-competition").value,
+        season_id:$("research-season").value
+      });
+      const data = await researchGet("/api/v1/research/statsbomb/matches/" +
+        encodeURIComponent(match.match_id) + "/analysis?" + query.toString());
+      const m = data.metricas || {}, h = m.local || {}, a = m.visitante || {};
+      const rows = [["xG",h.xg,a.xg],["Remates",h.remates,a.remates],
+        ["Remates a puerta",h.remates_a_puerta,a.remates_a_puerta]];
+      $("research-output").innerHTML = researchCard("Estadísticas históricas",
+        researchTable(["Métrica","Local","Visitante"],rows) +
+        '<p class="research-muted">Fuente: StatsBomb Open Data. Datos históricos seleccionados; atribución requerida al publicar análisis derivados.</p>');
+      researchStatus("Análisis del partido cargado. No representa tracking continuo de jugadores.");
+    } catch (error) {
+      researchStatus("No se pudo analizar el partido: " + error.message, true);
+    } finally {
+      button.disabled = false; button.textContent = previous;
+    }
+  }
+
+  function researchMode(active) {
+    document.querySelectorAll(researchHideSelector).forEach(el => { el.hidden = active; });
+    $("research-view").hidden = !active;
+    $("research-toggle").setAttribute("aria-pressed",String(active));
+    if (active && !researchState.loaded) researchLoadCatalog();
+  }
+
+  $("research-toggle").addEventListener("click",() => researchMode($("research-view").hidden));
+  $("research-refresh").addEventListener("click",researchLoadCatalog);
+  $("research-competition").addEventListener("change",researchLoadSeasons);
+  $("research-season").addEventListener("change",researchLoadMatches);
+  $("research-match").addEventListener("change",researchSelectMatch);
+  $("research-goals").addEventListener("click",() => researchCalculate("goals"));
+  $("research-counts").addEventListener("click",() => researchCalculate("counts"));
+  $("research-analysis").addEventListener("click",researchAnalyse);
+  $("research-date").value = researchToday();
+
   checkHealth().then(loadCartelera);
 })();

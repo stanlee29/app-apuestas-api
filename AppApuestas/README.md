@@ -79,7 +79,7 @@ El primer modelo utiliza marcadores finalizados de una temporada StatsBomb:
 - Distribución Poisson con corrección Dixon-Coles para marcadores de baja puntuación.
 - Salidas: 1X2, ambos marcan, líneas de goles 0.5 a 4.5 y ocho marcadores más probables.
 
-El modelo todavía no incorpora cuotas, lesiones, alineaciones ni modelos propios de remates/córners/tarjetas. El parámetro rho es inicial y no está calibrado por competición; el modelo es exploratorio. La predicción de un partido exige `fecha_partido` y excluye todos los resultados de ese día y posteriores para evitar fuga temporal.
+El modelo de goles no incorpora todavía lesiones ni alineaciones. Los mercados de remates, tiros a puerta, córners, faltas y tarjetas se calculan por separado en `/api/v1/research/statsbomb/markets-predict`; son estimaciones experimentales y aún no tienen backtest propio fuera de muestra. El parámetro rho es inicial y no está calibrado por competición; el modelo es exploratorio. La predicción de un partido exige `fecha_partido` y excluye todos los resultados de ese día y posteriores para evitar fuga temporal.
 
 ### Backtest cronológico
 - `GET /api/v1/research/statsbomb/backtest?competition_id=...&season_id=...&min_train=30`
@@ -89,4 +89,4 @@ El modelo todavía no incorpora cuotas, lesiones, alineaciones ni modelos propio
 
 ### Versión
 
-API backend 1.0.8 o posterior.
+API backend 1.0.9 o posterior.
