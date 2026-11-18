@@ -494,6 +494,6 @@ def statsbomb_status() -> dict[str, Any]:
             "no todas las temporadas tienen datos StatsBomb 360",
             "requiere atribución a StatsBomb en análisis publicados",
         ],
-        "catalogo": "https://github.com/statsbomb/open-data",
-        "documentacion": "https://github.com/statsbomb/open-data/blob/master/README.md",
+        "catalogo": "https://github.com/hudl/open-data",
+        "documentacion": "https://github.com/hudl/open-data/blob/master/README.md",
     }
