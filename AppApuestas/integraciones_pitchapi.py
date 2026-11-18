@@ -203,7 +203,30 @@ class PitchAPIClient:
                 "xg_por_remate": round(sum(xg_values) / len(xg_values), 4) if xg_values else None,
             }
 
-        stats = stats_data.get("stats", []) if isinstance(stats_data, dict) else []
+        stats: list[dict[str, Any]] = []
+        periods_stats = stats_data.get("periods", []) if isinstance(stats_data, dict) else []
+        if isinstance(periods_stats, list):
+            # El endpoint entrega grupos por periodo ("All", "FirstHalf", "SecondHalf").
+            # Priorizamos "All" para no duplicar las métricas de las dos mitades.
+            all_period = next(
+                (period for period in periods_stats if isinstance(period, dict) and period.get("period") == "All"),
+                periods_stats[0] if periods_stats else {},
+            )
+            for group in all_period.get("groups", []) if isinstance(all_period, dict) else []:
+                if not isinstance(group, dict):
+                    continue
+                for item in group.get("items", []):
+                    if not isinstance(item, dict):
+                        continue
+                    stats.append({
+                        "grupo": group.get("group_name"),
+                        "key": item.get("key"),
+                        "title": item.get("title"),
+                        "home": item.get("home"),
+                        "away": item.get("away"),
+                        "format_type": item.get("format_type"),
+                    })
+
         return {
             "fuente": "PitchAPI",
             "partido": match,
@@ -213,6 +236,7 @@ class PitchAPIClient:
             },
             "remates": shots,
             "estadisticas_equipo": stats,
+            "estadisticas_equipo_raw": stats_data,
             "estadisticas_jugadores": players_data.get("players", []) if isinstance(players_data, dict) else [],
             "h2h": h2h_data,
             "mapas_calor": heatmaps_data,
