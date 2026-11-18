@@ -17,7 +17,7 @@ import uvicorn
 from motor_probabilidades import predecir_partido, cargar_datos, calcular_valor_ev
 
 # Importación de la función asíncrona del nuevo extractor
-from extractor_ganaplay import obtener_cartelera_ganaplay
+from extractor_ganaplay import obtener_cartelera_con_valor
 
 # ==============================================================================
 # ENUM PARA MENÚ DESPLEGABLE EN /docs
