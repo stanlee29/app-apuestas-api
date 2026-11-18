@@ -1,267 +1,322 @@
 """
-Módulo: extractor_ganaplay.py
-Descripción: Extracción 100% automática de partidos y cuotas reales vía API pública de ESPN.
-             Sin Playwright, sin claves, sin partidos ficticios. Compatible con Render.
+Cartelera deportiva basada en el scoreboard público de ESPN.
+No inventa cuotas: calcula EV únicamente cuando ESPN entrega moneyline verificable.
 """
-
-import os
 import json
-import re
-import requests
+import os
 from datetime import datetime, timedelta, timezone
-from typing import List, Dict, Any, Tuple
+from pathlib import Path
+from typing import Any
+
+import requests
 
 from motor_probabilidades import cargar_datos, predecir_partido, calcular_valor_ev
 
-# ==============================================================================
-# CONFIGURACIÓN GLOBAL
-# ==============================================================================
-DIRECTORIO_SALIDA = "datos"
-ARCHIVO_CUOTAS = os.path.join(DIRECTORIO_SALIDA, "cuotas_ganaplay.json")
+BASE_DIR = Path(__file__).resolve().parent
+DIRECTORIO_SALIDA = BASE_DIR / "datos"
+ARCHIVO_CUOTAS = DIRECTORIO_SALIDA / "cuotas_ganaplay.json"
+TZ_SV = timezone(timedelta(hours=-6))
 
-# Mapeo de deportes a las categorías y ligas de la API de ESPN
 LEAGUES_MAP = {
     "nba": [("basketball", "nba")],
     "nfl": [("football", "nfl")],
     "mlb": [("baseball", "mlb")],
     "futbol": [
-        ("soccer", "esp.1"),               # LaLiga
-        ("soccer", "eng.1"),               # Premier League
-        ("soccer", "ita.1"),               # Serie A
-        ("soccer", "ger.1"),               # Bundesliga
-        ("soccer", "uefa.champions"),      # Champions League
-        ("soccer", "mex.1"),               # Liga MX
-        ("soccer", "fifa.worldq.concacaf") # Eliminatorias Concacaf
-    ]
+        ("soccer", "esp.1"),
+        ("soccer", "eng.1"),
+        ("soccer", "ita.1"),
+        ("soccer", "ger.1"),
+        ("soccer", "uefa.champions"),
+        ("soccer", "mex.1"),
+        ("soccer", "fifa.worldq.concacaf"),
+    ],
+}
+
+LEAGUE_NAMES = {
+    "nba": "NBA",
+    "nfl": "NFL",
+    "mlb": "MLB",
+    "esp.1": "LaLiga",
+    "eng.1": "Premier League",
+    "ita.1": "Serie A",
+    "ger.1": "Bundesliga",
+    "uefa.champions": "Champions League",
+    "mex.1": "Liga MX",
+    "fifa.worldq.concacaf": "Eliminatorias CONCACAF",
 }
 
 HEADERS_ESPN = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    "User-Agent": "EdgeBet research app/0.1 (public ESPN scoreboard client)",
+    "Accept": "application/json",
 }
 
-def asegurar_directorio() -> None:
-    os.makedirs(DIRECTORIO_SALIDA, exist_ok=True)
 
-# ==============================================================================
-# FUNCIONES AUXILIARES
-# ==============================================================================
+def asegurar_directorio() -> None:
+    DIRECTORIO_SALIDA.mkdir(parents=True, exist_ok=True)
+
 
 def obtener_rango_fechas(dias: int) -> str:
-    """Genera YYYYMMDD si dias=0, o YYYYMMDD-YYYYMMDD si dias>0."""
-    hoy = datetime.now()
+    hoy = datetime.now(TZ_SV)
+    fin = hoy + timedelta(days=dias)
     if dias == 0:
         return hoy.strftime("%Y%m%d")
-    else:
-        fin = hoy + timedelta(days=dias)
-        return f"{hoy.strftime('%Y%m%d')}-{fin.strftime('%Y%m%d')}"
+    return f"{hoy.strftime('%Y%m%d')}-{fin.strftime('%Y%m%d')}"
 
-def convertir_a_utc6(fecha_iso: str) -> Tuple[datetime, str]:
-    """Convierte fecha ISO de ESPN a datetime y string legible en hora de El Salvador (UTC-6)."""
+
+def convertir_a_utc6(fecha_iso: str) -> tuple[datetime, str]:
     try:
-        # Reemplazar 'Z' por '+00:00' para que fromisoformat funcione en Python 3.11+
-        dt_utc = datetime.fromisoformat(fecha_iso.replace('Z', '+00:00'))
-        tz_sv = timezone(timedelta(hours=-6))
-        dt_sv = dt_utc.astimezone(tz_sv)
+        dt = datetime.fromisoformat(fecha_iso.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        dt_sv = dt.astimezone(TZ_SV)
         return dt_sv, dt_sv.strftime("%Y-%m-%d %H:%M")
-    except Exception:
-        hoy = datetime.now()
-        return hoy, hoy.strftime("%Y-%m-%d %H:%M (Hora estimada)")
+    except (TypeError, ValueError):
+        raise ValueError(f"Fecha ESPN inválida: {fecha_iso!r}")
 
-def odds_americana_a_decimal(odds_str: str) -> float:
-    """Convierte cuotas americanas (ej: '-150', '+130') a decimales."""
+
+def americana_a_decimal(valor: Any) -> float | None:
+    """Convierte moneyline americano a cuota decimal. Devuelve None si falta/no es válido."""
+    if valor is None:
+        return None
     try:
-        val = int(odds_str)
-        if val < 0:
-            return round(1.0 + (100.0 / abs(val)), 2)
+        numero = float(str(valor).replace("−", "-").strip())
+    except (TypeError, ValueError):
+        return None
+
+    if numero == 0:
+        return None
+    if numero < 0:
+        decimal = 1.0 + (100.0 / abs(numero))
+    else:
+        decimal = 1.0 + (numero / 100.0)
+
+    return round(decimal, 3) if decimal > 1 else None
+
+
+def extraer_cuotas(odds_list: Any) -> tuple[dict[str, float | None], str | None]:
+    """
+    Lee solo campos moneyline estructurados de ESPN.
+    No interpreta el texto details ni deriva una cuota faltante.
+    """
+    resultado = {"local": None, "empate": None, "visitante": None}
+    if not isinstance(odds_list, list):
+        return resultado, None
+
+    for item in odds_list:
+        if not isinstance(item, dict):
+            continue
+        home = item.get("homeTeamOdds") or {}
+        away = item.get("awayTeamOdds") or {}
+        draw = item.get("drawOdds") or item.get("tieOdds") or {}
+
+        if isinstance(draw, dict):
+            draw_moneyline = draw.get("moneyLine", draw.get("moneyline"))
         else:
-            return round(1.0 + (val / 100.0), 2)
-    except ValueError:
-        return 0.0
+            draw_moneyline = draw
 
-def extraer_cuotas_de_detalle_espn(detalle: str, equipo_local_nombre: str) -> Dict[str, float]:
-    """Intenta parsear el texto de cuotas de ESPN (ej: 'Lakers -150')."""
-    cuotas = {"local": None, "empate": None, "visitante": None}
-    if not detalle:
-        return cuotas
-        
-    # Buscar números que parezcan cuotas americanas
-    matches = re.findall(r'([+-]?\d{2,4})', detalle)
-    if len(matches) >= 1:
-        # Heurística simple: si hay un número negativo, es el favorito.
-        # Asignamos la cuota al equipo que aparezca primero en el string o por defecto.
-        cuota_dec = odds_americana_a_decimal(matches[0])
-        if cuota_dec > 1.0:
-            # Asumimos que la primera cuota encontrada es la del local por simplicidad, 
-            # o calculamos la del visitante inversa si es posible.
-            cuotas["local"] = cuota_dec
-            cuotas["visitante"] = round(max(1.01, 1.0 / (1.0 - 1.0/cuota_dec) if cuota_dec > 1 else 2.10), 2)
-            
-    return cuotas
+        resultado = {
+            "local": americana_a_decimal(home.get("moneyLine", home.get("moneyline"))),
+            "empate": americana_a_decimal(draw_moneyline),
+            "visitante": americana_a_decimal(away.get("moneyLine", away.get("moneyline"))),
+        }
+        provider = item.get("provider") or {}
+        nombre_provider = provider.get("name") if isinstance(provider, dict) else None
 
-def generar_cuotas_justas_desde_modelo(prob_local: float, prob_empate: float, prob_visitante: float) -> Dict[str, float]:
-    """Genera cuotas decimales realistas con un margen de casa de apuestas del 5%."""
-    margen = 1.05
-    c_local = round(max(1.01, 1.0 / (prob_local * margen)), 2) if prob_local > 0 else 1.90
-    c_visitante = round(max(1.01, 1.0 / (prob_visitante * margen)), 2) if prob_visitante > 0 else 2.10
-    c_empate = round(max(1.01, 1.0 / (prob_empate * margen)), 2) if prob_empate > 0 else None
-    return {"local": c_local, "empate": c_empate, "visitante": c_visitante}
+        if any(valor is not None for valor in resultado.values()):
+            return resultado, nombre_provider or "ESPN"
+    return resultado, None
 
-# ==============================================================================
-# LÓGICA PRINCIPAL DE EXTRACCIÓN
-# ==============================================================================
 
-def obtener_cartelera_con_valor(deporte: str, dias: int = 2) -> Dict[str, Any]:
-    """
-    Consulta la API pública de ESPN, extrae partidos reales, calcula EV 
-    y devuelve la cartelera ordenada cronológicamente. CERO partidos ficticios.
-    """
-    deporte = deporte.lower()
+def _porcentaje(probabilidad: float | None) -> str | None:
+    if probabilidad is None:
+        return None
+    return f"{probabilidad * 100:.1f}%"
+
+
+def obtener_cartelera_con_valor(deporte: str, dias: int = 2) -> dict[str, Any]:
+    deporte = deporte.lower().strip()
     if deporte not in LEAGUES_MAP:
-        return {"deporte": deporte, "mensaje": "Deporte no soportado.", "cartelera": [], "rango_fechas": ""}
+        return {
+            "deporte": deporte,
+            "mensaje": "Deporte no soportado.",
+            "cartelera": [],
+            "rango_fechas": "",
+        }
 
     rango_fechas = obtener_rango_fechas(dias)
-    ahora = datetime.now()
-    limite = ahora + timedelta(days=dias)
-    datos_historicos = cargar_datos(DIRECTORIO_SALIDA)
-    
-    partidos_reales = []
+    ahora = datetime.now(TZ_SV)
+    limite = ahora + timedelta(days=dias, hours=23, minutes=59)
+    datos_historicos = cargar_datos(str(DIRECTORIO_SALIDA))
+    partidos_reales: list[dict[str, Any]] = []
+    errores_fuente: list[str] = []
 
-    # 1. Consultar todas las ligas correspondientes al deporte en ESPN
-    for sport_category, league_id in LEAGUES_MAP[deporte]:
+    for categoria, league_id in LEAGUES_MAP[deporte]:
+        url = f"https://site.api.espn.com/apis/site/v2/sports/{categoria}/{league_id}/scoreboard"
         try:
-            url = f"http://site.api.espn.com/apis/site/v2/sports/{sport_category}/{league_id}/scoreboard"
-            params = {"dates": rango_fechas, "limit": 100}
-            response = requests.get(url, headers=HEADERS_ESPN, params=params, timeout=10)
-            
-            if response.status_code != 200:
-                continue
-                
+            response = requests.get(
+                url,
+                headers=HEADERS_ESPN,
+                params={"dates": rango_fechas, "limit": 100},
+                timeout=15,
+            )
+            response.raise_for_status()
             data = response.json()
-            events = data.get('events', [])
-            
-            for event in events:
-                # Solo nos interesan partidos programados o en vivo, NO finalizados
-                status = event.get('status', {}).get('type', {}).get('name', '')
-                if status == 'STATUS_FINAL':
-                    continue
-                
-                competitions = event.get('competitions', [])
-                if not competitions:
-                    continue
-                
-                comp = competitions[0]
-                competitors = comp.get('competitors', [])
-                if len(competitors) < 2:
-                    continue
-
-                # Extraer equipos
-                local_nombre = visitante_nombre = "Desconocido"
-                for c in competitors:
-                    name = c.get('team', {}).get('displayName', 'Desconocido')
-                    if c.get('homeAway') == 'home':
-                        local_nombre = name
-                    else:
-                        visitante_nombre = name
-
-                # Extraer fecha y convertir a UTC-6
-                fecha_iso = event.get('date', '')
-                dt_sv, fecha_str_sv = convertir_a_utc6(fecha_iso)
-                
-                # Filtrar por rango de fechas real (por si ESPN devuelve basura de fechas pasadas)
-                if not (ahora <= dt_sv <= limite):
-                    continue
-
-                # Intentar extraer cuotas de ESPN
-                odds_list = comp.get('odds', [])
-                cuotas_raw = {"local": None, "empate": None, "visitante": None}
-                
-                if odds_list and isinstance(odds_list, list) and len(odds_list) > 0:
-                    detalle = odds_list[0].get('details', '')
-                    cuotas_raw = extraer_cuotas_de_detalle_espn(detalle, local_nombre)
-
-                partidos_reales.append({
-                    "fecha_hora_dt": dt_sv,
-                    "fecha_hora": fecha_str_sv,
-                    "local": local_nombre,
-                    "visitante": visitante_nombre,
-                    "cuotas_raw": cuotas_raw,
-                    "league_id": league_id
-                })
-        except Exception:
-            # Si una liga falla, continuamos con la siguiente. No rompemos el flujo.
+        except (requests.RequestException, ValueError) as exc:
+            errores_fuente.append(f"{league_id}: {type(exc).__name__}")
             continue
 
-    # 2. Si no se encontraron partidos reales en ninguna liga, devolver vacío (CERO ficticios)
-    if not partidos_reales:
-        mensaje = f"No se encontraron partidos programados en las fuentes de datos para {deporte.upper()} en el rango de fechas solicitado."
-        return {"deporte": deporte, "rango_fechas": rango_fechas, "mensaje": mensaje, "cartelera": []}
+        for event in data.get("events", []):
+            status_info = event.get("status") or {}
+            status_type = status_info.get("type") or {}
+            status_name = status_type.get("name", "")
+            status_state = status_type.get("state", "")
 
-    # 3. Procesar partidos reales: Calcular probabilidades y EV
-    cartelera_final = []
-    for p in partidos_reales:
-        # Llamar al motor. Si el equipo no está en el CSV, el motor usa promedios de la liga (fallback seguro)
-        pred = predecir_partido(deporte, p["local"], p["visitante"], datos_historicos)
-        
-        # Si el motor devuelve un error crítico (ej. deporte inválido), saltamos
-        if "error" in pred and "Sin datos" in pred["error"]:
-            continue
+            if status_name == "STATUS_FINAL":
+                continue
 
-        prob_local = pred.get("prob_victoria_local", 0.33)
-        prob_visitante = pred.get("prob_victoria_visitante", 0.33)
-        prob_empate = pred.get("prob_empate", 0.34 if deporte == "futbol" else 0.0)
+            competitions = event.get("competitions") or []
+            if not competitions:
+                continue
 
-        # Si ESPN no trajo cuotas válidas, generamos cuotas justas basadas en el modelo para que la UI no falle
-        c_local = p["cuotas_raw"]["local"]
-        c_empate = p["cuotas_raw"]["empate"]
-        c_visitante = p["cuotas_raw"]["visitante"]
-        
-        if not c_local or not c_visitante:
-            cuotas_justas = generar_cuotas_justas_desde_modelo(prob_local, prob_empate, prob_visitante)
-            c_local = c_local or cuotas_justas["local"]
-            c_empate = c_empate or cuotas_justas["empate"]
-            c_visitante = c_visitante or cuotas_justas["visitante"]
+            competition = competitions[0]
+            competitors = competition.get("competitors") or []
+            if len(competitors) < 2:
+                continue
 
-        # Calcular Valor Esperado (EV)
-        analisis_ev = {}
-        analisis_ev["local"] = calcular_valor_ev(prob_local * 100, float(c_local))
-        analisis_ev["visitante"] = calcular_valor_ev(prob_visitante * 100, float(c_visitante))
-        if deporte == "futbol" and c_empate:
-            analisis_ev["empate"] = calcular_valor_ev(prob_empate * 100, float(c_empate))
+            equipo_local = None
+            equipo_visitante = None
+            for competitor in competitors:
+                equipo = (competitor.get("team") or {}).get("displayName")
+                if competitor.get("homeAway") == "home":
+                    equipo_local = equipo
+                elif competitor.get("homeAway") == "away":
+                    equipo_visitante = equipo
+
+            if not equipo_local or not equipo_visitante:
+                continue
+
+            try:
+                dt_sv, fecha_hora = convertir_a_utc6(event.get("date"))
+            except ValueError:
+                continue
+
+            en_vivo = status_state == "in"
+            if not en_vivo and not (ahora <= dt_sv <= limite):
+                continue
+
+            cuotas, proveedor = extraer_cuotas(
+                competition.get("odds") or event.get("odds") or []
+            )
+
+            partidos_reales.append({
+                "evento_id": str(event.get("id", "")),
+                "fecha_dt": dt_sv,
+                "fecha_hora": fecha_hora,
+                "local": equipo_local,
+                "visitante": equipo_visitante,
+                "liga": LEAGUE_NAMES.get(league_id, league_id),
+                "league_id": league_id,
+                "estado_evento": "En vivo" if en_vivo else "Programado",
+                "cuotas": cuotas,
+                "fuente_cuotas": proveedor,
+            })
+
+    partidos_reales.sort(key=lambda partido: partido["fecha_dt"])
+    cartelera_final: list[dict[str, Any]] = []
+
+    for partido in partidos_reales:
+        prediccion = predecir_partido(
+            deporte,
+            partido["local"],
+            partido["visitante"],
+            datos_historicos,
+        )
+        error_modelo = prediccion.get("error")
+        modelo_disponible = error_modelo is None
+
+        prob_local = prediccion.get("prob_victoria_local") if modelo_disponible else None
+        prob_visitante = prediccion.get("prob_victoria_visitante") if modelo_disponible else None
+        prob_empate = prediccion.get("prob_empate") if modelo_disponible else None
+
+        analisis_ev: dict[str, Any] = {}
+        if prob_local is not None and partido["cuotas"]["local"] is not None:
+            analisis_ev["local"] = calcular_valor_ev(prob_local * 100, partido["cuotas"]["local"])
+        if prob_visitante is not None and partido["cuotas"]["visitante"] is not None:
+            analisis_ev["visitante"] = calcular_valor_ev(
+                prob_visitante * 100,
+                partido["cuotas"]["visitante"],
+            )
+        if prob_empate is not None and partido["cuotas"]["empate"] is not None:
+            analisis_ev["empate"] = calcular_valor_ev(
+                prob_empate * 100,
+                partido["cuotas"]["empate"],
+            )
 
         cartelera_final.append({
+            "evento_id": partido["evento_id"],
             "deporte": deporte,
-            "fecha_hora": p["fecha_hora"],
-            "local": p["local"],
-            "visitante": p["visitante"],
-            "cuotas": {
-                "local": float(c_local),
-                "empate": float(c_empate) if c_empate else None,
-                "visitante": float(c_visitante)
-            },
+            "liga": partido["liga"],
+            "league_id": partido["league_id"],
+            "fecha_hora": partido["fecha_hora"],
+            "zona_horaria": "America/El_Salvador",
+            "estado_evento": partido["estado_evento"],
+            "local": partido["local"],
+            "visitante": partido["visitante"],
+            "fuente_eventos": "ESPN",
+            "fuente_cuotas": partido["fuente_cuotas"],
+            "cuotas": partido["cuotas"],
             "probabilidades_modelo": {
-                "local": f"{prob_local * 100:.1f}%",
-                "empate": f"{prob_empate * 100:.1f}%" if deporte == "futbol" else "N/A",
-                "visitante": f"{prob_visitante * 100:.1f}%"
+                "local": _porcentaje(prob_local),
+                "empate": _porcentaje(prob_empate),
+                "visitante": _porcentaje(prob_visitante),
             },
+            "modelo_disponible": modelo_disponible,
+            "detalle_modelo": prediccion.get("modelo") if modelo_disponible else None,
+            "error_modelo": error_modelo,
             "analisis_ev": analisis_ev,
-            "tiene_valor_positivo": any(ev.get("es_valor_positivo", False) for ev in analisis_ev.values())
+            "tiene_valor_positivo": any(
+                resultado.get("es_valor_positivo", False)
+                for resultado in analisis_ev.values()
+            ),
         })
 
-    # 4. Ordenar cronológicamente (del más próximo al más lejano)
-    cartelera_final.sort(key=lambda x: x["fecha_hora_dt"])
+    positivos = sum(1 for partido in cartelera_final if partido["tiene_valor_positivo"])
+    con_modelo = sum(1 for partido in cartelera_final if partido["modelo_disponible"])
+    con_cuotas = sum(1 for partido in cartelera_final if partido["fuente_cuotas"])
 
-    # 5. Generar mensaje de estado
-    partidos_con_valor = sum(1 for p in cartelera_final if p["tiene_valor_positivo"])
-    mensaje_final = f"{len(cartelera_final)} partidos reales encontrados. {partidos_con_valor} con Valor Esperado positivo."
+    if cartelera_final:
+        mensaje = (
+            f"{len(cartelera_final)} eventos encontrados; "
+            f"{con_modelo} con predicción disponible y {con_cuotas} con cuotas publicadas."
+        )
+    elif errores_fuente:
+        mensaje = "No se pudo consultar una o más ligas de ESPN. Revisa el estado de la fuente."
+    else:
+        mensaje = f"No se encontraron eventos para {deporte.upper()} en el rango solicitado."
 
-    # 6. Guardar auditoría en disco
     asegurar_directorio()
-    with open(ARCHIVO_CUOTAS, 'w', encoding='utf-8') as f:
-        json.dump(cartelera_final, f, indent=4, ensure_ascii=False)
+    with ARCHIVO_CUOTAS.open("w", encoding="utf-8") as archivo:
+        json.dump(
+            {
+                "generado_en": datetime.now(TZ_SV).isoformat(),
+                "deporte": deporte,
+                "rango_fechas": rango_fechas,
+                "cartelera": cartelera_final,
+            },
+            archivo,
+            indent=2,
+            ensure_ascii=False,
+        )
 
     return {
         "deporte": deporte,
         "rango_fechas": rango_fechas,
-        "mensaje": mensaje_final,
-        "cartelera": cartelera_final
+        "zona_horaria": "America/El_Salvador",
+        "mensaje": mensaje,
+        "total_partidos": len(cartelera_final),
+        "total_con_modelo": con_modelo,
+        "total_con_cuotas": con_cuotas,
+        "partidos_con_valor_positivo": positivos,
+        "errores_fuente": errores_fuente,
+        "cartelera": cartelera_final,
     }
