@@ -30,7 +30,7 @@ class FootballModelTests(unittest.TestCase):
 
     def test_dixon_coles_adjustment_low_score(self):
         self.assertGreater(dixon_coles_tau(0, 0, 1.4, 1.1, -0.08), 1.0)
-        self.assertLess(dixon_coles_tau(1, 1, 1.4, 1.1, -0.08), 1.0)
+        self.assertGreater(dixon_coles_tau(1, 1, 1.4, 1.1, -0.08), 1.0)
         self.assertEqual(dixon_coles_tau(2, 1, 1.4, 1.1, -0.08), 1.0)
 
     def test_prediction_has_normalized_probabilities_and_derived_markets(self):
