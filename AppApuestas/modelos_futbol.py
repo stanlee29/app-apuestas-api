@@ -13,7 +13,14 @@ from typing import Any
 
 
 def _team_name(value: Any) -> str:
-    return str(value.get("name") or "") if isinstance(value, dict) else str(value or "")
+    if isinstance(value, dict):
+        return str(
+            value.get("name")
+            or value.get("home_team_name")
+            or value.get("away_team_name")
+            or ""
+        )
+    return str(value or "")
 
 
 def _normalise(text: str) -> str:
