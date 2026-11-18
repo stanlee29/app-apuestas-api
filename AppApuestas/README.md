@@ -75,10 +75,11 @@ PitchAPI es una fuente de fútbol, no proporciona por sí sola las cuotas de las
 El primer modelo utiliza marcadores finalizados de una temporada StatsBomb:
 - Tasas de goles locales y visitantes ponderadas por recencia (vida media inicial de 180 días).
 - Ajuste de fuerza ofensiva/defensiva de local y visitante con regularización hacia el promedio de liga.
-- Distribución Poisson con ajuste Dixon-Coles para marcadores de baja puntuación.
+- Cuando existen al menos tres partidos recientes con eventos xG para cada condición, combina xG reciente de StatsBomb (65%) con las tasas de goles reales (35%). Si la cobertura no alcanza ese mínimo, utiliza el respaldo basado solo en marcadores.
+- Distribución Poisson con corrección Dixon-Coles para marcadores de baja puntuación.
 - Salidas: 1X2, ambos marcan, líneas de goles 0.5 a 4.5 y ocho marcadores más probables.
 
-No usa xG históricos agregados, remates, cuotas, lesiones ni alineaciones en la estimación de goles. El parámetro rho es inicial y no está calibrado por competición; el modelo es exploratorio y aún no está validado fuera de muestra. No debe presentarse como recomendación de apuesta.
+El modelo todavía no incorpora cuotas, lesiones, alineaciones ni modelos propios de remates/córners/tarjetas. El parámetro rho es inicial y no está calibrado por competición; el modelo es exploratorio y aún no está validado fuera de muestra. No debe presentarse como recomendación de apuesta.
 
 ### Versión
 
