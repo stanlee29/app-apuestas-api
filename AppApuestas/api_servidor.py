@@ -25,13 +25,13 @@ from sports_game_odds import (
 
 from integraciones_pitchapi import PitchAPIClient, PitchAPIError, pitchapi_status
 from statsbomb_open_data import StatsBombOpenData, StatsBombDataError, statsbomb_status
-from modelos_futbol import predict_from_matches
+from modelos_futbol import predict_from_matches, evaluate_walk_forward
 
 BASE_DIR = Path(__file__).resolve().parent
 DATOS_DIR = BASE_DIR / "datos"
 STATIC_DIR = BASE_DIR / "static"
 INDEX_FILE = STATIC_DIR / "index.html"
-VERSION = "1.0.5"
+VERSION = "1.0.6"
 EVENT_CACHE_SECONDS = max(60, int(os.getenv("SPORTSGAMEODDS_CACHE_SECONDS", "600")))
 MARKET_CACHE_SECONDS = max(60, int(os.getenv("SPORTSGAMEODDS_MARKET_CACHE_SECONDS", "600")))
 
@@ -396,15 +396,38 @@ def research_statsbomb_match_analysis(
 def research_statsbomb_predict(
     competition_id: int = Query(..., ge=1),
     season_id: int = Query(..., ge=1),
+    fecha_partido: date = Query(..., description="Fecha YYYY-MM-DD del partido que se quiere analizar"),
     local: str = Query(..., min_length=1, max_length=100),
     visitante: str = Query(..., min_length=1, max_length=100),
     rho: float = Query(default=-0.08, ge=-0.25, le=0.25),
 ):
     try:
         statsbomb = StatsBombOpenData()
-        matches = statsbomb.matches(competition_id, season_id)
+        all_matches = statsbomb.matches(competition_id, season_id)
+        matches = statsbomb.matches_before_date(all_matches, fecha_partido.isoformat())
         xg_rates = statsbomb.recent_team_xg(matches, local, visitante, limit=8)
         result = predict_from_matches(matches, local, visitante, rho=rho, xg_rates=xg_rates)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except StatsBombDataError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    result["competicion_id"] = competition_id
+    result["temporada_id"] = season_id
+    result["fecha_objetivo"] = fecha_partido.isoformat()
+    result["regla_temporal"] = "Solo resultados anteriores al día del partido; el día objetivo queda excluido."
+    return result
+
+
+@app.get("/api/v1/research/statsbomb/backtest", tags=["Modelos"])
+def research_statsbomb_backtest(
+    competition_id: int = Query(..., ge=1),
+    season_id: int = Query(..., ge=1),
+    min_train: int = Query(default=30, ge=20, le=500),
+    rho: float = Query(default=-0.08, ge=-0.25, le=0.25),
+):
+    try:
+        matches = StatsBombOpenData().matches(competition_id, season_id)
+        result = evaluate_walk_forward(matches, min_train=min_train, rho=rho)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except StatsBombDataError as exc:
