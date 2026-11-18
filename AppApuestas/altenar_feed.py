@@ -298,10 +298,9 @@ class AltenarFeedClient:
 
     def get_sports(self) -> Any:
         # El manual del Data Feed define GetSports como catálogo general de deportes.
-        query = {"importerId": self.settings.importer_id}
         url = f"{self.settings.base_url}/GetSports"
         try:
-            response = self.session.get(url, params=query, timeout=self.settings.timeout_seconds)
+            response = self.session.get(url, timeout=self.settings.timeout_seconds)
             response.raise_for_status()
         except requests.RequestException as exc:
             raise FeedAccessError(f"No fue posible consultar GetSports: {exc}") from exc
