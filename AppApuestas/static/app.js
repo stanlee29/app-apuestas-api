@@ -43,14 +43,14 @@
   }
   function formatEV(entries) {
     const values=Object.entries(entries||{});
-    if(!values.length) return {label:"EV no calculable",positive:false};
+    if(!values.length) return {label:"EV teórico no calculable",positive:false};
     const positive=values.filter((entry)=>entry[1]&&entry[1].es_valor_positivo);
-    if(!positive.length) return {label:"EV sin ventaja",positive:false};
+    if(!positive.length) return {label:"EV teórico sin señal",positive:false};
     const labels=positive.map((entry)=>{
       const key=entry[0]==="local"?"L":entry[0]==="visitante"?"V":"E";
       return key+" +"+(Number(entry[1].valor_esperado)*100).toFixed(1)+"%";
     });
-    return {label:"EV+ "+labels.join(" · "),positive:true};
+    return {label:"EV teórico+ "+labels.join(" · "),positive:true};
   }
   function renderEvent(event) {
     const p=event.probabilidades_modelo||{}, odds=event.cuotas||{}, ev=formatEV(event.analisis_ev);
