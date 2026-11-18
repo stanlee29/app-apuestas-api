@@ -100,7 +100,14 @@ class StatsBombOpenDataTests(unittest.TestCase):
 
         def fake_json(path, ttl=0):
             if path == "matches/9/281.json":
-                return [match]
+                previous = dict(match)
+                previous.update({
+                    "match_id": 99,
+                    "match_date": "2024-12-01",
+                    "home_score": 0,
+                    "away_score": 2,
+                })
+                return [match, previous]
             if path == "events/100.json":
                 return events
             if path == "lineups/100.json":
