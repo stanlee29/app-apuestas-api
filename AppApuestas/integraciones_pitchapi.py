@@ -44,7 +44,13 @@ class PitchAPIClient:
     def configured(self) -> bool:
         return bool(self.api_key)
 
-    def _get(self, path: str, params: dict[str, Any] | None = None, optional: bool = False) -> Any:
+    def _get(
+        self,
+        path: str,
+        params: dict[str, Any] | None = None,
+        optional: bool = False,
+        cache_seconds: int | None = None,
+    ) -> Any:
         if not self.configured:
             raise PitchAPIError(
                 "PitchAPI aún no está conectado. Crea una clave gratuita y guárdala en Render "
@@ -57,9 +63,10 @@ class PitchAPIClient:
         query = tuple(sorted((str(k), str(v)) for k, v in (params or {}).items() if v is not None))
         cache_key = clean_path + repr(query)
         now = time.monotonic()
+        ttl = CACHE_SECONDS if cache_seconds is None else max(0, cache_seconds)
         with _CACHE_LOCK:
             cached = _CACHE.get(cache_key)
-            if cached and now - cached[0] < CACHE_SECONDS:
+            if ttl > 0 and cached and now - cached[0] < ttl:
                 return cached[1]
 
         try:
@@ -119,8 +126,9 @@ class PitchAPIClient:
             )
 
         data = payload.get("data", payload)
-        with _CACHE_LOCK:
-            _CACHE[cache_key] = (now, data)
+        if ttl > 0:
+            with _CACHE_LOCK:
+                _CACHE[cache_key] = (now, data)
         return data
 
     def list_leagues(self) -> list[dict[str, Any]]:
@@ -153,7 +161,9 @@ class PitchAPIClient:
 
     def match_live(self, match_id: str) -> dict[str, Any]:
         self._validate_match_id(match_id)
-        data = self._get(f"/matches/{quote(match_id, safe='')}/live")
+        # El proveedor indica que el endpoint live no se consulte a intervalos menores de 10 s.
+        # Una caché de 10 s evita solicitar snapshots más rápido que ese intervalo.
+        data = self._get(f"/matches/{quote(match_id, safe='')}/live", cache_seconds=10)
         return data if isinstance(data, dict) else {}
 
     @staticmethod
