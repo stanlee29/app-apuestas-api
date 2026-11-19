@@ -5,5 +5,5 @@ services:
     plan: free
     rootDir: AppApuestas
     buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn api_servidor:app --host 0.0.0.0 --port $PORT
+    startCommand: exec python -m uvicorn api_bootstrap:app --host 0.0.0.0 --port $PORT --lifespan on
     healthCheckPath: /health
