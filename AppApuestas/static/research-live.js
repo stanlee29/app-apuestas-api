@@ -50,7 +50,7 @@
     const state = String(match.status || "").toLowerCase();
     let suffix = "";
     if (state === "finished" || state === "ft" || state === "after_extra_time" || state === "after_penalties") suffix = " · FINAL " + (match.score_home ?? "—") + "-" + (match.score_away ?? "—");
-    else if (state.includes("live") || state === "in_progress" || state === "1h" || state === "2h") suffix = " · EN VIVO";
+    else if (state.includes("live") || state === "started" || state === "in_progress" || state === "1h" || state === "2h") suffix = " · EN VIVO";
     else suffix = " · POR JUGAR";
     return formatDate(match) + " · " + home + " vs " + away + suffix;
   }
@@ -219,6 +219,7 @@
     try {
       const live = await get("/api/v1/research/football/matches/" + encodeURIComponent(matchId) + "/live");
       state.lastAnalysis.live_snapshot = live;
+      if (live.status) state.lastAnalysis.partido = { ...(state.lastAnalysis.partido || state.selected), status: live.status, score_home: live.score_home ?? (state.lastAnalysis.partido || state.selected).score_home, score_away: live.score_away ?? (state.lastAnalysis.partido || state.selected).score_away };
       renderAnalysis(state.lastAnalysis);
       if (live.live !== true) stopLivePolling();
     } catch (error) {
@@ -331,8 +332,10 @@
       const data = await get("/api/v1/research/football/matches/" + encodeURIComponent(matchId) + "/analysis");
       const matchStatus = String(state.selected && state.selected.status || "").toLowerCase();
       if (matchStatus === "started" || matchStatus === "in_progress" || matchStatus.includes("live") || matchStatus === "1h" || matchStatus === "2h") {
-        try { data.live_snapshot = await get("/api/v1/research/football/matches/" + encodeURIComponent(matchId) + "/live"); }
-        catch (liveError) { data.live_warning = liveError.message; }
+        try {
+          data.live_snapshot = await get("/api/v1/research/football/matches/" + encodeURIComponent(matchId) + "/live");
+          if (data.live_snapshot.status) data.partido = { ...(data.partido || state.selected), status: data.live_snapshot.status, score_home: data.live_snapshot.score_home ?? (data.partido || state.selected).score_home, score_away: data.live_snapshot.score_away ?? (data.partido || state.selected).score_away };
+        } catch (liveError) { data.live_warning = liveError.message; }
       }
       state.lastAnalysis = data;
       renderAnalysis(data);
