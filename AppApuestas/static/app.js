@@ -586,7 +586,7 @@
     document.querySelectorAll(researchHideSelector).forEach(el => { el.hidden = active; });
     $("research-view").hidden = !active;
     $("research-toggle").setAttribute("aria-pressed",String(active));
-    if (active && !researchState.loaded) researchLoadCatalog();
+    if (active && $("statsbomb-archive").open && !researchState.loaded) researchLoadCatalog();
   }
 
   $("research-toggle").addEventListener("click",() => researchMode($("research-view").hidden));
@@ -597,6 +597,7 @@
   $("research-goals").addEventListener("click",() => researchCalculate("goals"));
   $("research-counts").addEventListener("click",() => researchCalculate("counts"));
   $("research-analysis").addEventListener("click",researchAnalyse);
+  $("statsbomb-archive").addEventListener("toggle",() => { if ($("statsbomb-archive").open && !$("research-view").hidden && !researchState.loaded) researchLoadCatalog(); });
   $("research-date").value = researchToday();
 
   checkHealth().then(loadCartelera);
