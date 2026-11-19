@@ -25,6 +25,17 @@ pip install -r requirements.txt
 uvicorn api_servidor:app --reload
 \`\`\`
 
+## Research Engine actual
+
+La vista principal de Research usa PitchAPI, no el archivo histórico de StatsBomb. En la aplicación se selecciona liga, temporada y partido. Los partidos en vivo y programados se ordenan antes que los finalizados.
+
+El análisis de un encuentro puede incluir:
+- Alineaciones y suplentes, identificando explícitamente si el once está confirmado o es provisional.
+- Estadísticas individuales por futbolista: minutos, rating, goles, asistencias, xG, xA y remates cuando estén disponibles.
+- Estadísticas de equipo, tiros con xG, mapas de actividad de equipos y jugadores, métricas avanzadas y H2H según la cobertura del partido.
+
+No se inventan datos que el proveedor no entregue. En partidos futuros, las estadísticas de rendimiento pueden estar vacías hasta que el partido se juegue; las alineaciones previas al inicio pueden ser estimaciones. StatsBomb permanece disponible en un bloque separado como archivo histórico y no se mezcla con la plantilla vigente.
+
 ## Investigación avanzada de fútbol (PitchAPI)
 
 AppApuestas puede complementar las cuotas de SportsGameOdds con PitchAPI para obtener catálogo de ligas, fixtures, historial desde 2021 y, cuando el partido tenga cobertura, remates con xG, coordenadas, estadísticas de equipos y jugadores, H2H, mapas de calor, eventos, momentum y analítica avanzada.
