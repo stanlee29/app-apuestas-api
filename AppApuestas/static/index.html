@@ -10,6 +10,7 @@
   <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/static/styles.css">
   <script src="/static/app.js" defer></script>
+  <script src="/static/research-live.js" defer></script>
 </head>
 <body>
   <div class="app-frame">
@@ -121,10 +122,31 @@
           <div>
             <div class="eyebrow"><span class="eyebrow-line"></span> INVESTIGACIÓN HISTÓRICA</div>
             <h1>Research <span>Engine</span></h1>
-            <p class="page-subtitle">Modelos de goles y mercados de volumen con datos históricos de StatsBomb.</p>
+            <p class="page-subtitle">Análisis de partidos, alineaciones, rendimiento de jugadores, xG y mapas con datos de fútbol recientes.</p>
           </div>
-          <span class="research-provider-tag">StatsBomb Open Data · Histórico</span>
+          <span class="research-provider-tag">PitchAPI · 77 ligas · Cobertura desde 2021</span>
         </div>
+        <section id="pitch-research" class="pitch-research">
+          <div class="pitch-research-head">
+            <div><div class="section-kicker">DATOS VIGENTES Y PARTIDOS RECIENTES</div><h2>Centro de análisis de partidos</h2></div>
+            <span class="pitch-source-pill"><span class="source-dot"></span> PitchAPI · fuente principal</span>
+          </div>
+          <p class="pitch-research-intro">Elige una liga y su temporada disponible. El análisis muestra únicamente futbolistas vinculados al partido seleccionado; las alineaciones se identifican como confirmadas o provisionales.</p>
+          <div class="pitch-research-controls">
+            <label class="research-field research-wide">Liga<select id="pitch-league" class="select-control"><option value="">Cargando ligas…</option></select></label>
+            <label class="research-field">Temporada<select id="pitch-season" class="select-control" disabled><option value="">Selecciona liga</option></select></label>
+            <label class="research-field research-wide">Partido<select id="pitch-match" class="select-control" disabled><option value="">Selecciona temporada</option></select></label>
+          </div>
+          <div class="pitch-research-actions">
+            <button id="pitch-refresh" class="research-button secondary" type="button">Actualizar ligas</button>
+            <button id="pitch-analyze" class="research-button" type="button" disabled>Analizar partido</button>
+          </div>
+          <div id="pitch-status" class="research-status" role="status">Conectando con la fuente de fútbol actual…</div>
+          <div id="pitch-output" class="research-output"></div>
+          <p class="research-muted">La cobertura depende del partido. Una alineación previa al inicio puede ser una predicción; el sistema no la presentará como confirmada. xG y estadísticas se muestran solo cuando la fuente las proporciona.</p>
+        </section>
+        <details id="statsbomb-archive" class="research-archive">
+          <summary><span>Archivo histórico StatsBomb</span><small>Datos de temporadas antiguas · análisis histórico, no plantilla vigente</small></summary>
         <div class="research-explainer"><strong>Importante</strong><p>Las predicciones excluyen el día objetivo y fechas posteriores. StatsBomb ofrece datos históricos de competiciones seleccionadas; no es una cartelera mundial ni un feed en vivo.</p></div>
         <div class="research-controls">
           <label class="research-field research-wide">Competición<select id="research-competition" class="select-control"><option value="">Cargando…</option></select></label>
@@ -143,6 +165,8 @@
         </div>
         <div id="research-status" class="research-status" role="status">Selecciona una competición para comenzar.</div>
         <div id="research-output" class="research-output"></div>
+
+        </details>
       </section>
 
       <section class="methodology">
