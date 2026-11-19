@@ -264,13 +264,13 @@
     finally { button.disabled = false; button.textContent = old; }
   }
   function init() {
-    if (!("fetch" in window) || !( $("pitch-league") )) return;
+    if (!("fetch" in window) || !$("pitch-league")) return;
     $("pitch-refresh").addEventListener("click",loadLeagues);
     $("pitch-league").addEventListener("change",loadSeasons);
     $("pitch-season").addEventListener("change",loadMatches);
     $("pitch-match").addEventListener("change",selectMatch);
     $("pitch-analyze").addEventListener("click",analyse);
-    $("research-toggle").addEventListener("click",() => { if (!$ ("research-view").hidden && !state.loaded) loadLeagues(); });
+    $("research-toggle").addEventListener("click",() => { if (!$("research-view").hidden && !state.loaded) loadLeagues(); });
     if ($("statsbomb-archive")) $("statsbomb-archive").addEventListener("toggle",() => { if ($("statsbomb-archive").open) status("Archivo StatsBomb abierto: es exclusivamente histórico. Para plantillas y rendimiento actual usa el panel principal PitchAPI."); });
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded",init); else init();
