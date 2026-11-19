@@ -2,7 +2,7 @@
 (function(){
   "use strict";
   const $ = id => document.getElementById(id);
-  const state = { leagues: [], matches: [], selected: null, loaded: false, busy: false };
+  const state = { leagues: [], matches: [], selected: null, loaded: false, busy: false, lastAnalysis: null, liveTimer: null };
   const positionNames = {1:"POR",2:"DEF",3:"MED",4:"DEL"};
 
   function esc(value) {
@@ -56,8 +56,8 @@
   }
   function matchOrder(a,b) {
     const aState = String(a.status || "").toLowerCase(), bState = String(b.status || "").toLowerCase();
-    const aLive = aState.includes("live") || aState === "in_progress" || aState === "1h" || aState === "2h";
-    const bLive = bState.includes("live") || bState === "in_progress" || bState === "1h" || bState === "2h";
+    const aLive = aState.includes("live") || aState === "started" || aState === "in_progress" || aState === "1h" || aState === "2h";
+    const bLive = bState.includes("live") || bState === "started" || bState === "in_progress" || bState === "1h" || bState === "2h";
     if (aLive !== bLive) return aLive ? -1 : 1;
     const aFuture = !(aState === "finished" || aState === "ft" || aState === "after_extra_time" || aState === "after_penalties");
     const bFuture = !(bState === "finished" || bState === "ft" || bState === "after_extra_time" || bState === "after_penalties");
@@ -113,7 +113,13 @@
       status(state.matches.length + " partidos encontrados en " + season + ". Los próximos aparecen primero; los finalizados quedan disponibles para consultar sus estadísticas.");
     } catch (error) { fill("pitch-match",[],"Sin partidos disponibles"); status("No se pudieron cargar los partidos: " + error.message,true); }
   }
+  function stopLivePolling() {
+    if (state.liveTimer) window.clearInterval(state.liveTimer);
+    state.liveTimer = null;
+  }
   function selectMatch() {
+    stopLivePolling();
+    state.lastAnalysis = null;
     state.selected = state.matches.find(item => String(item.id) === $("pitch-match").value) || null;
     $("pitch-analyze").disabled = !state.selected;
     $("pitch-output").innerHTML = "";
@@ -178,6 +184,53 @@
       return '<section class="research-card"><h3>' + esc(group.name) + ' · rendimiento individual</h3><div class="research-table-scroll"><table class="research-table"><thead><tr><th>Jugador</th><th>Min</th><th>Rating</th><th>G</th><th>A</th><th>xG</th><th>xA</th><th>Rem.</th></tr></thead><tbody>' + rows + '</tbody></table></div></section>';
     }).join("");
   }
+  function renderLivePlayerStats(snapshot, homeName, awayName) {
+    const lineups = snapshot && snapshot.lineups || {};
+    const sides = [{key:"home",name:homeName},{key:"away",name:awayName}];
+    const html = sides.map(side => {
+      const lineup = lineups[side.key] || {};
+      const players = [...(Array.isArray(lineup.starters) ? lineup.starters : []), ...(Array.isArray(lineup.subs) ? lineup.subs : [])];
+      if (!players.length) return "";
+      const rows = players.map(player => {
+        const liveStats = Array.isArray(player.stats) ? player.stats : [];
+        const stat = key => { const item = liveStats.find(value => value && value.key === key); return item && item.value != null ? item.value : "—"; };
+        let role = player.status === "on_pitch" ? "EN CANCHA" : player.status === "bench" ? "BANCA" : player.status === "sent_off" || player.red_card_minute != null ? "EXPULSADO" : player.subbed_off_minute != null ? "SUSTITUIDO" : "PLANTILLA";
+        if (player.subbed_on_minute != null) role = "ENTRÓ " + player.subbed_on_minute + "'";
+        return '<tr><td><strong>' + esc(player.shirt_number || "·") + '</strong> ' + esc(player.name || "Jugador") + '</td><td>' + esc(role) + '</td><td>' + esc(stat("goals")) + '</td><td>' + esc(stat("rating")) + '</td></tr>';
+      }).join("");
+      return '<section class="pitch-subcard"><h4>' + esc(side.name) + (lineup.formation ? " · " + esc(lineup.formation) : "") + '</h4><div class="research-table-scroll"><table class="research-table"><thead><tr><th>Jugador</th><th>Estado</th><th>G</th><th>Rating</th></tr></thead><tbody>' + rows + '</tbody></table></div></section>';
+    }).join("");
+    return html ? '<div class="pitch-two-col">' + html + '</div>' : '<div class="pitch-empty">La fuente todavía no publica el once en vivo.</div>';
+  }
+  function renderLiveEvents(snapshot) {
+    const events = Array.isArray(snapshot && snapshot.events) ? snapshot.events.slice(-12).reverse() : [];
+    if (!events.length) return '<div class="pitch-empty">Todavía no hay eventos registrados en el snapshot.</div>';
+    const rows = events.map(event => {
+      const actor = event.player && event.player.name || event.player_in && event.player_in.name || event.player_out && event.player_out.name || "—";
+      const detail = [event.detail, event.player_in && ("Entra " + event.player_in.name), event.player_out && ("Sale " + event.player_out.name)].filter(Boolean).join(" · ");
+      const minute = event.minute == null ? "—" : String(event.minute) + (event.added ? "+" + event.added : "") + "'";
+      const score = event.score_home == null || event.score_away == null ? "—" : event.score_home + "-" + event.score_away;
+      return '<tr><td>' + esc(minute) + '</td><td>' + esc(String(event.type || "Evento").replaceAll("_"," ").toUpperCase()) + '</td><td>' + esc(actor) + '</td><td>' + esc(detail || "—") + '</td><td>' + esc(score) + '</td></tr>';
+    }).join("");
+    return '<div class="research-table-scroll"><table class="research-table"><thead><tr><th>Min</th><th>Evento</th><th>Jugador</th><th>Detalle</th><th>Marcador</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+  }
+  async function refreshLiveSnapshot(matchId) {
+    if (!state.selected || String(state.selected.id) !== String(matchId) || !state.lastAnalysis) { stopLivePolling(); return; }
+    try {
+      const live = await get("/api/v1/research/football/matches/" + encodeURIComponent(matchId) + "/live");
+      state.lastAnalysis.live_snapshot = live;
+      renderAnalysis(state.lastAnalysis);
+      if (live.live !== true) stopLivePolling();
+    } catch (error) {
+      status("Se conserva el último snapshot en vivo. No se pudo actualizar: " + error.message,true);
+    }
+  }
+  function startLivePolling(matchId, live) {
+    stopLivePolling();
+    if (!live || live.live !== true) return;
+    // PitchAPI establece un mínimo de 10 s entre consultas live; usamos 15 s.
+    state.liveTimer = window.setInterval(() => refreshLiveSnapshot(matchId),15000);
+  }
   function renderHeatmapCard(item, title, grid) {
     const width = Number(grid && grid.length) || 16, height = Number(grid && grid.width) || 12;
     const cells = Array.isArray(item.cells) ? item.cells : [];
@@ -220,12 +273,19 @@
     }).join("") + '</div>';
   }
   function renderAnalysis(data) {
-    const match = data.partido || state.selected || {};
+    const live = data.live_snapshot && data.live_snapshot.live === true ? data.live_snapshot : null;
+    const baseMatch = data.partido || state.selected || {};
+    const match = live ? {
+      ...baseMatch,
+      status: live.status || "started",
+      score_home: live.score_home ?? baseMatch.score_home,
+      score_away: live.score_away ?? baseMatch.score_away
+    } : baseMatch;
     const home = match.home_team || {}, away = match.away_team || {};
     const homeName = home.name || "Local", awayName = away.name || "Visitante";
     const homeId = home.id || (data.alineaciones && data.alineaciones.home_team && data.alineaciones.home_team.id) || "home";
     const awayId = away.id || (data.alineaciones && data.alineaciones.away_team && data.alineaciones.away_team.id) || "away";
-    const stats = data.estadisticas_equipo || [];
+    const stats = live && Array.isArray(live.stats) ? live.stats : data.estadisticas_equipo || [];
     const xg = data.metricas_calculadas_desde_remates || {};
     const shots = Array.isArray(data.remates) ? data.remates.slice().sort((a,b)=>(Number(b.expected_goals)||0)-(Number(a.expected_goals)||0)).slice(0,10) : [];
     const shotRows = shots.map(item => ['<td>'+esc(item.player && item.player.name || "—")+'</td>','<td>'+esc(item.minute==null?"—":item.minute+"'")+'</td>','<td>'+esc(fmt(item.expected_goals,3))+'</td>','<td>'+esc(item.event_type||"—")+'</td>'].join("")).join("");
@@ -233,33 +293,50 @@
     const availability = data.disponibilidad || {};
     const coverage = Object.entries(availability).filter(entry=>entry[1]===true).map(entry=>entry[0].replaceAll("_"," "));
     const stateText = String(match.status || "").toLowerCase();
-    const isLive = stateText.includes("live") || stateText === "in_progress" || stateText === "1h" || stateText === "2h";
+    const isLive = stateText.includes("live") || stateText === "started" || stateText === "in_progress" || stateText === "1h" || stateText === "2h";
     const isFinished = stateText === "finished" || stateText === "ft" || stateText === "after_extra_time" || stateText === "after_penalties";
     const badge = isLive ? '<span class="pitch-chip live">EN VIVO</span>' : isFinished ? '<span class="pitch-chip finished">FINALIZADO</span>' : '<span class="pitch-chip">PROGRAMADO</span>';
-    let html = '<div class="research-card"><div class="pitch-research-statusline">'+badge+'<span class="pitch-chip">FUENTE: PITCHAPI</span><span class="pitch-chip">'+esc(match.date || "Fecha no disponible")+'</span></div>';
-    html += '<div class="pitch-analysis-grid"><div class="pitch-kpi"><small>Marcador</small><strong>'+esc(match.score_home==null?"—":match.score_home)+ ' - '+esc(match.score_away==null?"—":match.score_away)+'</strong><em>'+ (isFinished?"Resultado registrado":"Sin resultado final")+'</em></div>';
+    const clock = live && live.clock && live.clock.display ? '<span class="pitch-chip live">' + esc(live.clock.display) + '</span>' : '';
+    const freshness = live ? (live.stale ? '<span class="pitch-chip provisional">SNAPSHOT ANTERIOR · ' + esc(live.age_seconds == null ? "antigüedad desconocida" : live.age_seconds + " s") + '</span>' : '<span class="pitch-chip finished">ACTUALIZADO · ' + esc(live.age_seconds == null ? "reciente" : live.age_seconds + " s") + '</span>') : '';
+    let html = '<div class="research-card"><div class="pitch-research-statusline">'+badge+clock+freshness+'<span class="pitch-chip">FUENTE: PITCHAPI</span><span class="pitch-chip">'+esc(match.date || "Fecha no disponible")+'</span></div>';
+    html += '<div class="pitch-analysis-grid"><div class="pitch-kpi"><small>Marcador</small><strong>'+esc(match.score_home==null?"—":match.score_home)+ ' - '+esc(match.score_away==null?"—":match.score_away)+'</strong><em>'+ (isFinished?"Resultado registrado":isLive?"Marcador en curso":"Sin resultado final")+'</em></div>';
     html += '<div class="pitch-kpi"><small>xG local</small><strong>'+esc(fmt(xg.local && xg.local.xg,2))+'</strong><em>'+esc(homeName)+'</em></div><div class="pitch-kpi"><small>xG visitante</small><strong>'+esc(fmt(xg.visitante && xg.visitante.xg,2))+'</strong><em>'+esc(awayName)+'</em></div><div class="pitch-kpi"><small>Remates detectados</small><strong>'+esc(data.remates ? data.remates.length : "—")+'</strong><em>Eventos con xG disponibles</em></div></div>';
     html += '<p class="research-muted">Datos analíticos disponibles: '+esc(coverage.length?coverage.join(" · "):"sin bloques avanzados confirmados")+'. '+esc(data.nota||"")+'</p></div>';
     html += '<section class="research-card"><h3>Estadísticas del partido</h3>'+renderTeamStats(stats,homeName,awayName,xg)+'</section>';
-    const lineups = data.alineaciones || {};
-    html += '<section class="research-card"><h3>Alineaciones y jugadores del encuentro</h3><div class="pitch-two-col">'+renderLineupSide(homeName,lineups.home)+renderLineupSide(awayName,lineups.away)+'</div><p class="pitch-data-note">Las alineaciones previstas se marcan como provisionales. Solo la etiqueta CONFIRMADA indica que la fuente reporta un XI confirmado.</p></section>';
-    html += renderPlayerStats(data.estadisticas_jugadores,homeId,awayId,homeName,awayName);
+    const lineups = live && live.lineups ? live.lineups : data.alineaciones || {};
+    html += '<section class="research-card"><h3>'+(live?"Alineación actual y situación de jugadores":"Alineaciones y jugadores del encuentro")+'</h3><div class="pitch-two-col">'+renderLineupSide(homeName,lineups.home)+renderLineupSide(awayName,lineups.away)+'</div><p class="pitch-data-note">'+(live?"La fuente indica quién sigue en cancha, quién está en banca y las sustituciones registradas.":"Las alineaciones previstas se marcan como provisionales. Solo la etiqueta CONFIRMADA indica que la fuente reporta un XI confirmado.")+'</p>';
+    if (live) html += renderLivePlayerStats(live,homeName,awayName);
+    html += '</section>';
+    if (!live) html += renderPlayerStats(data.estadisticas_jugadores,homeId,awayId,homeName,awayName);
     html += '<section class="research-card"><h3>Remates de mayor xG</h3>'+shotTable+'</section>';
     html += '<section class="research-card"><h3>Mapas de actividad</h3>'+renderHeatmaps(data)+'</section>';
     html += '<section class="research-card"><h3>Analítica avanzada por equipo</h3>'+renderAdvanced(data)+'</section>';
+    if (live) html += '<section class="research-card"><h3>Eventos en directo</h3>'+renderLiveEvents(live)+'<p class="pitch-data-note">Actualización automática cada 15 segundos mientras el proveedor mantiene el partido en estado live. El snapshot incluye la antigüedad y si el dato anterior se está sirviendo como respaldo.</p></section>';
     const h2h = data.h2h && Array.isArray(data.h2h.recent_matches) ? data.h2h.recent_matches.filter(item=>item.finished===true).slice(0,8) : [];
     if (h2h.length) html += '<section class="research-card"><h3>Enfrentamientos recientes</h3><div class="research-table-scroll"><table class="research-table"><thead><tr><th>Fecha</th><th>Local</th><th>Marcador</th><th>Visitante</th></tr></thead><tbody>'+h2h.map(item=>'<tr><td>'+esc(item.time_utc||"—")+'</td><td>'+esc(item.home && item.home.name||"—")+'</td><td>'+esc(item.score_home)+"-"+esc(item.score_away)+'</td><td>'+esc(item.away && item.away.name||"—")+'</td></tr>').join("")+'</tbody></table></div></section>';
     $("pitch-output").innerHTML = html;
-    status(isFinished ? "Análisis del encuentro finalizado cargado." : isLive ? "Datos del encuentro en vivo cargados. La antigüedad depende del último snapshot de la fuente." : "Partido programado cargado. La alineación puede ser provisional y las estadísticas se completarán después del encuentro.");
+    if (live) status("Partido en vivo · " + (live.clock && live.clock.display || "en curso") + ". La información se actualiza cada 15 segundos.");
+    else if (isFinished) status("Análisis del encuentro finalizado cargado.");
+    else status("Partido programado cargado. La alineación puede ser provisional y las estadísticas se completarán después del encuentro.");
   }
   async function analyse() {
     if (!state.selected) { status("Selecciona un partido primero.",true); return; }
     const button = $("pitch-analyze"), old = button.textContent;
     button.disabled = true; button.textContent = "Analizando…";
+    stopLivePolling();
+    state.lastAnalysis = null;
     status("Consultando partido, alineaciones, jugadores, remates, mapas y estadísticas…");
+    const matchId = state.selected.id;
     try {
-      const data = await get("/api/v1/research/football/matches/" + encodeURIComponent(state.selected.id) + "/analysis");
+      const data = await get("/api/v1/research/football/matches/" + encodeURIComponent(matchId) + "/analysis");
+      const matchStatus = String(state.selected && state.selected.status || "").toLowerCase();
+      if (matchStatus === "started" || matchStatus === "in_progress" || matchStatus.includes("live") || matchStatus === "1h" || matchStatus === "2h") {
+        try { data.live_snapshot = await get("/api/v1/research/football/matches/" + encodeURIComponent(matchId) + "/live"); }
+        catch (liveError) { data.live_warning = liveError.message; }
+      }
+      state.lastAnalysis = data;
       renderAnalysis(data);
+      startLivePolling(matchId,data.live_snapshot);
     } catch (error) { status("No se pudo analizar este partido: " + error.message,true); }
     finally { button.disabled = false; button.textContent = old; }
   }
