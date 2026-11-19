@@ -3,8 +3,14 @@ name: Validate AppApuestas
 on:
   push:
     branches: [main]
+    paths:
+      - "AppApuestas/**"
+      - ".github/workflows/tests.yml"
   pull_request:
     branches: [main]
+    paths:
+      - "AppApuestas/**"
+      - ".github/workflows/tests.yml"
 
 concurrency:
   group: app-apuestas-ci-${{ github.ref }}
