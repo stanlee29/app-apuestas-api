@@ -19,6 +19,8 @@ REQUEST_LOCK = threading.Lock()
 _LAST_REQUEST = 0.0
 MIN_REQUEST_INTERVAL = 2.05
 MAX_CACHE_ENTRIES = 250
+RATE_LIMIT_LOCK = threading.Lock()
+RATE_LIMIT_UNTIL = 0.0
 ENDPOINTS = {
     "eventsday.php",
     "lookupevent.php",
@@ -37,12 +39,16 @@ class TheSportsDBError(RuntimeError):
 
 
 def thesportsdb_status() -> dict[str, Any]:
+    with RATE_LIMIT_LOCK:
+        retry_in = max(0, int(RATE_LIMIT_UNTIL - time.monotonic()))
     return {
         "fuente": "TheSportsDB API v1",
         "disponible": True,
         "requiere_clave_propia": False,
         "clave": "pública compartida",
         "limite_publicado": "30 solicitudes por minuto",
+        "rate_limit_activo": retry_in > 0,
+        "reintento_en_segundos": retry_in,
         "estado": "auxiliar",
         "advertencia": "La API limita resultados por endpoint y no tiene cobertura completa en todas las ligas.",
     }
@@ -160,6 +166,14 @@ class TheSportsDBClient:
             cached = CACHE.get(key)
             if cached and now - cached[0] < cache_seconds:
                 return cached[1]
+        with RATE_LIMIT_LOCK:
+            retry_in = max(0, int(RATE_LIMIT_UNTIL - now))
+        if retry_in > 0:
+            raise TheSportsDBError(
+                "La API pública compartida está temporalmente limitada. Espera " + str(retry_in) + " segundos.",
+                503,
+                "THESPORTSDB_RATE_LIMIT",
+            )
         global _LAST_REQUEST
         try:
             with REQUEST_LOCK:
@@ -177,7 +191,19 @@ class TheSportsDBClient:
         if response.status_code == 404 and optional:
             return {}
         if response.status_code == 429:
-            raise TheSportsDBError("TheSportsDB alcanzó su límite gratuito; espera un minuto antes de reintentar.", 503, "THESPORTSDB_RATE_LIMIT")
+            retry_header = response.headers.get("Retry-After", "60")
+            try:
+                retry_seconds = max(30, min(300, int(retry_header)))
+            except (TypeError, ValueError):
+                retry_seconds = 60
+            global RATE_LIMIT_UNTIL
+            with RATE_LIMIT_LOCK:
+                RATE_LIMIT_UNTIL = max(RATE_LIMIT_UNTIL, time.monotonic() + retry_seconds)
+            raise TheSportsDBError(
+                "TheSportsDB alcanzó su límite gratuito compartido; el conector pausó nuevas consultas durante " + str(retry_seconds) + " segundos.",
+                503,
+                "THESPORTSDB_RATE_LIMIT",
+            )
         if response.status_code >= 500:
             raise TheSportsDBError("TheSportsDB respondió HTTP " + str(response.status_code) + ".", 502, "THESPORTSDB_UPSTREAM")
         if response.status_code >= 400:
