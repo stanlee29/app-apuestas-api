@@ -157,6 +157,7 @@ class TheSportsDBClient:
         cache_seconds: int = 120,
         optional: bool = False,
     ) -> dict[str, Any]:
+        global _LAST_REQUEST, RATE_LIMIT_UNTIL
         if endpoint not in ENDPOINTS:
             raise ValueError("Endpoint TheSportsDB no permitido.")
         clean = {key: value for key, value in params.items() if value is not None}
@@ -174,7 +175,6 @@ class TheSportsDBClient:
                 503,
                 "THESPORTSDB_RATE_LIMIT",
             )
-        global _LAST_REQUEST
         try:
             with REQUEST_LOCK:
                 wait = MIN_REQUEST_INTERVAL - (time.monotonic() - _LAST_REQUEST)
@@ -196,7 +196,6 @@ class TheSportsDBClient:
                 retry_seconds = max(30, min(300, int(retry_header)))
             except (TypeError, ValueError):
                 retry_seconds = 60
-            global RATE_LIMIT_UNTIL
             with RATE_LIMIT_LOCK:
                 RATE_LIMIT_UNTIL = max(RATE_LIMIT_UNTIL, time.monotonic() + retry_seconds)
             raise TheSportsDBError(
