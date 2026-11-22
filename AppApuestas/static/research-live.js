@@ -307,10 +307,9 @@
     if (!usable.length) return '<div class="pitch-empty">El proveedor no entregó coordenadas de remates para dibujar este mapa.</div>';
     const marks = usable.map(shot => {
       const isAway = String(shot.team_id) === String(awayId);
-      const x0 = Number(shot.x), y0 = Number(shot.y);
-      // PitchAPI expresa cada remate en dirección de ataque del equipo; giramos 180° al visitante
-      // para compararlos en un mismo campo con el local atacando hacia la derecha.
-      const x = isAway ? 105 - x0 : x0, y = isAway ? 68 - y0 : y0;
+      const x = Number(shot.x), y = Number(shot.y);
+      // PitchAPI ya normaliza los tiros para que cada equipo ataque hacia x=105.
+      // No se debe girar el visitante: ambas coordenadas ya comparten el mismo marco de ataque.
       const px = 20 + (x / 105) * 680, py = 20 + (y / 68) * 440;
       const rawXg = Number(shot.expected_goals);
       const xg = Number.isFinite(rawXg) ? Math.max(0, Math.min(1, rawXg)) : 0;
