@@ -24,6 +24,7 @@ from sports_game_odds import (
 )
 
 from integraciones_pitchapi import PitchAPIClient, PitchAPIError, pitchapi_status
+from espn_public_data import ESPNPublicClient, ESPNDataError, espn_status
 from statsbomb_open_data import StatsBombOpenData, StatsBombDataError, statsbomb_status
 from modelos_futbol import predict_from_matches, evaluate_walk_forward
 from modelos_mercados_statsbomb import predict_match_markets
@@ -249,10 +250,12 @@ def research_status():
             "sports_game_odds": provider_status(),
             "pitchapi": pitchapi_status(),
             "statsbomb_open_data": statsbomb_status(),
+            "espn_public": espn_status(),
         },
         "capacidades": {
             "cartelera_y_cuotas": "SportsGameOdds",
             "xg_remates_h2h_heatmaps": "PitchAPI (requiere clave gratuita)",
+            "cartelera_plantillas_contraste": "ESPN public JSON (experimental, sin clave)",
         },
     }
 
@@ -338,6 +341,58 @@ def research_football_match_live(match_id: str):
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except PitchAPIError as exc:
+        raise HTTPException(status_code=exc.status_code, detail={
+            "codigo": exc.code, "mensaje": str(exc)
+        }) from exc
+
+
+
+@app.get("/api/v1/research/espn/status", tags=["Investigación"])
+def research_espn_status():
+    return espn_status()
+
+
+@app.get("/api/v1/research/espn/leagues", tags=["Investigación"])
+def research_espn_leagues():
+    return {
+        "fuente": "ESPN public JSON",
+        "requiere_clave": False,
+        "total_ligas": len(ESPNPublicClient().leagues()),
+        "ligas": ESPNPublicClient().leagues(),
+        "estado": "experimental",
+    }
+
+
+@app.get("/api/v1/research/espn/scoreboard", tags=["Investigación"])
+def research_espn_scoreboard(
+    league: str = Query(default="eng.1", min_length=3, max_length=30),
+    fecha: date = Query(..., description="Fecha local YYYY-MM-DD"),
+    limit: int = Query(default=100, ge=1, le=100),
+):
+    try:
+        return ESPNPublicClient().scoreboard(league, fecha, limit)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except ESPNDataError as exc:
+        raise HTTPException(status_code=exc.status_code, detail={
+            "codigo": exc.code, "mensaje": str(exc)
+        }) from exc
+
+
+@app.get("/api/v1/research/espn/matches/{event_id}/analysis", tags=["Investigación"])
+def research_espn_match_analysis(
+    event_id: str,
+    league: str = Query(default="eng.1", min_length=3, max_length=30),
+    home_team_id: str | None = Query(default=None, max_length=12),
+    away_team_id: str | None = Query(default=None, max_length=12),
+):
+    try:
+        return ESPNPublicClient().match_analysis(
+            league, event_id, home_team_id=home_team_id, away_team_id=away_team_id
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except ESPNDataError as exc:
         raise HTTPException(status_code=exc.status_code, detail={
             "codigo": exc.code, "mensaje": str(exc)
         }) from exc

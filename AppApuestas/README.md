@@ -57,6 +57,20 @@ Las métricas xG de PitchAPI conservan su propia metodología. No se deben sumar
 
 ## Catálogo y analítica histórica gratuita
 
+### Fuente complementaria ESPN (sin clave, experimental)
+
+Se incorporó un cliente ligero para los endpoints JSON que consume el sitio público de ESPN Soccer. No usa navegador, proxies ni técnicas para evadir controles. A diferencia de PitchAPI, no requiere una clave.
+
+Competiciones habilitadas y verificadas en el endpoint: Premier League, EFL Championship, LaLiga, Serie A, Bundesliga, Ligue 1, Eredivisie, Primeira Liga, MLS, Liga MX, Brasileirão, Liga Profesional Argentina, Champions League y Europa League.
+
+Rutas:
+- `GET /api/v1/research/espn/status`
+- `GET /api/v1/research/espn/leagues`
+- `GET /api/v1/research/espn/scoreboard?league=eng.1&fecha=2026-11-22`
+- `GET /api/v1/research/espn/matches/{event_id}/analysis?league=eng.1&home_team_id=306&away_team_id=331`
+
+El módulo obtiene cartelera, marcador, estado, estadio, estadísticas de partido, líderes publicados y plantillas de temporada con sus estadísticas acumuladas. Las plantillas no equivalen a alineaciones confirmadas. El endpoint público no se ofrece como una API estable garantizada: puede cambiar, limitar consultas o dejar de responder. Por eso se usa como fuente secundaria de contraste, con caché y frecuencia moderada; PitchAPI sigue siendo la fuente principal de analítica avanzada.
+
 ### StatsBomb Open Data (sin clave)
 
 La API expone:
