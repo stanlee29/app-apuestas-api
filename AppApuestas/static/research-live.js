@@ -449,6 +449,49 @@
     return cards.length ? '<div class="pitch-two-col">' + cards.join("") + '</div>' :
       '<div class="pitch-empty">La fuente no publicó métricas individuales para los futbolistas de este encuentro.</div>';
   }
+
+  function renderRecentForm(match) {
+    const home = match.home_team || {}, away = match.away_team || {};
+    const homeId = String(home.id || ""), awayId = String(away.id || "");
+    const targetTime = Date.parse(match.time_utc || match.date || "");
+    if (!homeId || !awayId || !Number.isFinite(targetTime)) {
+      return '<div class="pitch-empty">No hay fecha o identificadores suficientes para calcular la forma histórica.</div>';
+    }
+    const finished = value => ["finished","ft","after_extra_time","after_penalties"].includes(String(value || "").toLowerCase());
+    function teamHistory(teamId) {
+      return state.matches.filter(item => {
+        if (!item || String(item.id) === String(match.id) || !finished(item.status) ||
+            item.score_home == null || item.score_away == null) return false;
+        const time = Date.parse(item.time_utc || item.date || "");
+        if (!Number.isFinite(time) || time >= targetTime) return false;
+        return String(item.home_team && item.home_team.id) === teamId ||
+          String(item.away_team && item.away_team.id) === teamId;
+      }).sort((a,b) => Date.parse(b.time_utc || b.date) - Date.parse(a.time_utc || a.date)).slice(0,5);
+    }
+    function sideCard(team, teamId) {
+      const history = teamHistory(teamId);
+      if (!history.length) return '<div class="pitch-subcard"><h4>' + esc(team.name || "Equipo") + '</h4><div class="pitch-empty">No hay cinco resultados anteriores disponibles en esta temporada de la competición seleccionada.</div></div>';
+      let wins=0, draws=0, losses=0, goalsFor=0, goalsAgainst=0, points=0;
+      const rows = history.map(item => {
+        const isHome = String(item.home_team && item.home_team.id) === teamId;
+        const own = Number(isHome ? item.score_home : item.score_away);
+        const opp = Number(isHome ? item.score_away : item.score_home);
+        const opponent = isHome ? item.away_team && item.away_team.name : item.home_team && item.home_team.name;
+        goalsFor += own; goalsAgainst += opp;
+        let result = "E", cls = "draw";
+        if (own > opp) { result = "G"; cls = "win"; wins++; points += 3; }
+        else if (own < opp) { result = "P"; cls = "loss"; losses++; }
+        else { draws++; points += 1; }
+        return '<div class="pitch-form-row"><span class="pitch-form-result ' + cls + '">' + result + '</span><span class="pitch-form-opponent">' + esc(opponent || "Rival") + '</span><strong>' + own + '-' + opp + '</strong><small>' + esc(item.date || "—") + '</small></div>';
+      }).join("");
+      return '<div class="pitch-subcard"><h4>' + esc(team.name || "Equipo") + '</h4>' +
+        '<div class="pitch-form-kpis"><span><b>' + points + '</b><small>Pts</small></span><span><b>' + wins + '-' + draws + '-' + losses + '</b><small>G-E-P</small></span>' +
+        '<span><b>' + (goalsFor/history.length).toFixed(1) + '</b><small>GF/partido</small></span><span><b>' + (goalsAgainst/history.length).toFixed(1) + '</b><small>GC/partido</small></span></div>' +
+        '<div class="pitch-form-list">' + rows + '</div><small class="pitch-data-note">Últimos ' + history.length + ' partidos finalizados antes de este encuentro en la temporada seleccionada.</small></div>';
+    }
+    return '<div class="pitch-two-col">' + sideCard(home,homeId) + sideCard(away,awayId) + '</div>';
+  }
+
   function renderMatchEvents(data) {
     const events = Array.isArray(data && data.eventos) ? data.eventos.slice().sort((a,b)=>
       (Number(a.minute)||0)+(Number(a.minute_added)||0)/1000 - ((Number(b.minute)||0)+(Number(b.minute_added)||0)/1000)
@@ -498,6 +541,7 @@
     html += '<div class="pitch-kpi"><small>xG local</small><strong>'+esc(fmt(xg.local && xg.local.xg,2))+'</strong><em>'+esc(homeName)+'</em></div><div class="pitch-kpi"><small>xG visitante</small><strong>'+esc(fmt(xg.visitante && xg.visitante.xg,2))+'</strong><em>'+esc(awayName)+'</em></div><div class="pitch-kpi"><small>Remates detectados</small><strong>'+esc(data.remates ? data.remates.length : "—")+'</strong><em>Eventos con xG disponibles</em></div></div>';
     html += '<p class="research-muted">Datos analíticos disponibles: '+esc(coverage.length?coverage.join(" · "):"sin bloques avanzados confirmados")+'. '+esc(data.nota||"")+'</p></div>';
     html += '<section class="research-card"><h3>Estadísticas del partido</h3>'+renderTeamStats(stats,homeName,awayName,xg)+'</section>';
+    html += '<section class="research-card"><h3>Forma reciente de la temporada</h3>'+renderRecentForm(match)+'</section>';
     const lineups = live && live.lineups ? live.lineups : data.alineaciones || {};
     html += '<section class="research-card"><h3>'+(live?"Alineación actual y situación de jugadores":"Alineaciones y jugadores del encuentro")+'</h3><div class="pitch-two-col">'+renderLineupSide(homeName,lineups.home)+renderLineupSide(awayName,lineups.away)+'</div><p class="pitch-data-note">'+(live?"La fuente indica quién sigue en cancha, quién está en banca y las sustituciones registradas.":"Las alineaciones previstas se marcan como provisionales. Solo la etiqueta CONFIRMADA indica que la fuente reporta un XI confirmado.")+'</p>';
     if (live) html += renderLivePlayerStats(live,homeName,awayName);
