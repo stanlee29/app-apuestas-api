@@ -44,4 +44,4 @@ jobs:
         run: |
           node --check static/app.js
           node --check static/research-live.js
-          node --check static/espn-research.js
+          node --check static/thesportsdb-research.js

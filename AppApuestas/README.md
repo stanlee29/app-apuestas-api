@@ -57,19 +57,16 @@ Las métricas xG de PitchAPI conservan su propia metodología. No se deben sumar
 
 ## Catálogo y analítica histórica gratuita
 
-### Fuente complementaria ESPN (sin clave, experimental)
+### Fuente auxiliar TheSportsDB (API gratuita)
 
-Se incorporó un cliente ligero para los endpoints JSON que consume el sitio público de ESPN Soccer. No usa navegador, proxies ni técnicas para evadir controles. A diferencia de PitchAPI, no requiere una clave.
-
-Competiciones habilitadas y verificadas en el endpoint: Premier League, EFL Championship, LaLiga, Serie A, Bundesliga, Ligue 1, Eredivisie, Primeira Liga, MLS, Liga MX, Brasileirão, Liga Profesional Argentina, Champions League y Europa League.
+Se incorpora la API v1 pública de TheSportsDB con la clave compartida documentada `123`; no exige una clave personal. Se usa como fuente auxiliar para consultar cartelera por fecha, estadísticas de partido, alineaciones, timeline y una muestra de fichas de jugadores activos.
 
 Rutas:
-- `GET /api/v1/research/espn/status`
-- `GET /api/v1/research/espn/leagues`
-- `GET /api/v1/research/espn/scoreboard?league=eng.1&fecha=2026-11-22`
-- `GET /api/v1/research/espn/matches/{event_id}/analysis?league=eng.1&home_team_id=306&away_team_id=331`
+- `GET /api/v1/research/thesportsdb/status`
+- `GET /api/v1/research/thesportsdb/events?fecha=2026-11-22`
+- `GET /api/v1/research/thesportsdb/events/{event_id}/analysis?home_team_id=133604&away_team_id=133605`
 
-El módulo obtiene cartelera, marcador, estado, estadio, estadísticas de partido, líderes publicados y plantillas de temporada con sus estadísticas acumuladas. Las plantillas no equivalen a alineaciones confirmadas. El endpoint público no se ofrece como una API estable garantizada: puede cambiar, limitar consultas o dejar de responder. Por eso se usa como fuente secundaria de contraste, con caché y frecuencia moderada; PitchAPI sigue siendo la fuente principal de analítica avanzada.
+La documentación publica un límite general de 30 solicitudes por minuto y límites de resultados por endpoint. El cliente aplica caché, serializa las peticiones y limita la consulta de jugadores a los primeros 10 registros activos por club. La cartelera puede estar incompleta; por eso TheSportsDB no reemplaza SportsGameOdds ni PitchAPI.
 
 ### StatsBomb Open Data (sin clave)
 

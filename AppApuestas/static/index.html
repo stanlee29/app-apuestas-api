@@ -11,7 +11,7 @@
   <link rel="stylesheet" href="/static/styles.css">
   <script src="/static/app.js" defer></script>
   <script src="/static/research-live.js" defer></script>
-  <script src="/static/espn-research.js" defer></script>
+  <script src="/static/thesportsdb-research.js" defer></script>
 </head>
 <body>
   <div class="app-frame">
@@ -147,25 +147,25 @@
           <p class="research-muted">La cobertura depende del partido. Una alineación previa al inicio puede ser una predicción; el sistema no la presentará como confirmada. xG y estadísticas se muestran solo cuando la fuente las proporciona.</p>
         </section>
 
-        <section id="espn-research" class="pitch-research">
+        <section id="thesportsdb-research" class="pitch-research">
           <div class="pitch-research-head">
-            <div><div class="section-kicker">FUENTE ABIERTA COMPLEMENTARIA</div><h2>Explorador de plantillas actuales</h2></div>
-            <span class="pitch-source-pill">ESPN · sin clave · experimental</span>
+            <div><div class="section-kicker">FUENTE AUXILIAR GRATUITA</div><h2>Contraste de alineaciones y estadísticas</h2></div>
+            <span class="pitch-source-pill">TheSportsDB · API pública</span>
           </div>
-          <p class="pitch-research-intro">Contrasta partidos y plantillas de temporada de ESPN. Esta fuente complementa PitchAPI; no confirma por sí sola el once titular ni sustituye estadísticas avanzadas de xG.</p>
+          <p class="pitch-research-intro">Busca la cartelera de una fecha y consulta alineaciones, eventos y estadísticas adicionales cuando TheSportsDB tenga cobertura. No reemplaza los datos principales de PitchAPI.</p>
           <div class="pitch-research-controls">
-            <label class="research-field research-wide">Competición<select id="espn-league" class="select-control"><option value="eng.1">Premier League</option></select></label>
-            <label class="research-field">Fecha de partidos<input id="espn-date" class="select-control" type="date"></label>
-            <label class="research-field research-wide">Partido<select id="espn-match" class="select-control" disabled><option value="">Pulsa Buscar partidos</option></select></label>
+            <label class="research-field research-wide">Fecha<input id="tsdb-date" class="select-control" type="date"></label>
+            <label class="research-field research-wide">Partido<select id="tsdb-event" class="select-control" disabled><option value="">Pulsa Buscar partidos</option></select></label>
           </div>
           <div class="pitch-research-actions">
-            <button id="espn-load" class="research-button secondary" type="button">Buscar partidos</button>
-            <button id="espn-analyze" class="research-button" type="button" disabled>Consultar plantillas y estadísticas</button>
+            <button id="tsdb-load" class="research-button secondary" type="button">Buscar partidos</button>
+            <button id="tsdb-analyze" class="research-button" type="button" disabled>Consultar alineaciones y estadísticas</button>
           </div>
-          <div id="espn-status" class="research-status" role="status">Fuente pública experimental. No requiere clave.</div>
-          <div id="espn-output" class="research-output"></div>
-          <p class="research-muted">ESPN no ofrece aquí una API pública con garantía de estabilidad. Los datos y la cobertura pueden cambiar. Las plantillas muestran jugadores registrados por el club en esa temporada, no una alineación confirmada para el partido.</p>
+          <div id="tsdb-status" class="research-status" role="status">API gratuita · clave pública compartida · límite publicado de 30 solicitudes por minuto.</div>
+          <div id="tsdb-output" class="research-output"></div>
+          <p class="research-muted">El acceso gratuito tiene límites por endpoint y la cobertura varía. Las fichas de jugadores se muestran como muestra parcial de hasta 10 registros activos por club. Confirma alineaciones y estadísticas con PitchAPI antes de utilizarlas en predicciones.</p>
         </section>
+
         <details id="statsbomb-archive" class="research-archive">
           <summary><span>Archivo histórico StatsBomb</span><small>Datos de temporadas antiguas · análisis histórico, no plantilla vigente</small></summary>
         <div class="research-explainer"><strong>Importante</strong><p>Las predicciones excluyen el día objetivo y fechas posteriores. StatsBomb ofrece datos históricos de competiciones seleccionadas; no es una cartelera mundial ni un feed en vivo.</p></div>
