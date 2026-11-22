@@ -273,6 +273,190 @@
       return '<div class="pitch-subcard"><h4>' + esc(name) + '</h4>' + metrics.filter(x=>x[1]!=null).map(x=>'<div class="pitch-teamline"><span>'+esc(x[0])+'</span><strong>'+esc(x[1])+'</strong></div>').join("") + '</div>';
     }).join("") + '</div>';
   }
+
+  function pitchFieldSvg() {
+    return '<rect class="pitch-field" x="20" y="20" width="680" height="440" rx="2"/>' +
+      '<line class="pitch-field-line" x1="360" y1="20" x2="360" y2="460"/>' +
+      '<circle class="pitch-field-line" cx="360" cy="240" r="62"/>' +
+      '<circle class="pitch-field-line" cx="360" cy="240" r="2" fill="currentColor"/>' +
+      '<rect class="pitch-field-line" x="20" y="108" width="107" height="264"/>' +
+      '<rect class="pitch-field-line" x="593" y="108" width="107" height="264"/>' +
+      '<rect class="pitch-field-line" x="20" y="174" width="36" height="132"/>' +
+      '<rect class="pitch-field-line" x="664" y="174" width="36" height="132"/>' +
+      '<path class="pitch-field-line" d="M127 198 A62 62 0 0 1 127 282 M593 198 A62 62 0 0 0 593 282"/>' +
+      '<path class="pitch-field-line" d="M20 194 L12 194 L12 286 L20 286 M700 194 L708 194 L708 286 L700 286"/>';
+  }
+  function renderShotMap(data, homeName, awayName, homeId, awayId) {
+    const shots = Array.isArray(data.remates) ? data.remates : [];
+    const usable = shots.filter(shot => {
+      const x = Number(shot.x), y = Number(shot.y), team = String(shot.team_id || "");
+      return Number.isFinite(x) && Number.isFinite(y) && x >= 0 && x <= 105 && y >= 0 && y <= 68 &&
+        (team === String(homeId) || team === String(awayId));
+    });
+    if (!usable.length) return '<div class="pitch-empty">El proveedor no entregó coordenadas de remates para dibujar este mapa.</div>';
+    const marks = usable.map(shot => {
+      const isAway = String(shot.team_id) === String(awayId);
+      const x0 = Number(shot.x), y0 = Number(shot.y);
+      // PitchAPI expresa cada remate en dirección de ataque del equipo; giramos 180° al visitante
+      // para compararlos en un mismo campo con el local atacando hacia la derecha.
+      const x = isAway ? 105 - x0 : x0, y = isAway ? 68 - y0 : y0;
+      const px = 20 + (x / 105) * 680, py = 20 + (y / 68) * 440;
+      const rawXg = Number(shot.expected_goals);
+      const xg = Number.isFinite(rawXg) ? Math.max(0, Math.min(1, rawXg)) : 0;
+      const radius = 4 + Math.sqrt(xg) * 12;
+      const goal = String(shot.event_type || "").toLowerCase() === "goal";
+      const cls = (isAway ? "away" : "home") + (goal ? " goal" : "");
+      const player = shot.player && shot.player.name || "Jugador no identificado";
+      const minute = shot.minute == null ? "—" : String(shot.minute) + "'";
+      const tip = player + " · " + minute + " · xG " + (Number.isFinite(rawXg) ? rawXg.toFixed(3) : "—") + " · " + (shot.event_type || "Remate");
+      return '<circle class="pitch-shot ' + cls + '" cx="' + px.toFixed(1) + '" cy="' + py.toFixed(1) + '" r="' + radius.toFixed(1) + '"><title>' + esc(tip) + '</title></circle>';
+    }).join("");
+    const homeCount = usable.filter(s => String(s.team_id) === String(homeId)).length;
+    const awayCount = usable.length - homeCount;
+    return '<div class="pitch-chart-wrap"><svg class="pitch-svg" viewBox="0 0 720 480" role="img" aria-label="Mapa de remates">' +
+      pitchFieldSvg() + marks + '</svg><div class="pitch-chart-legend">' +
+      '<span><i class="pitch-dot home"></i>' + esc(homeName) + ' · ' + homeCount + '</span>' +
+      '<span><i class="pitch-dot away"></i>' + esc(awayName) + ' · ' + awayCount + '</span>' +
+      '<span>El tamaño representa xG; los círculos destacados son goles.</span></div></div>';
+  }
+  function renderXgTimeline(data, homeName, awayName, homeId, awayId) {
+    const shots = (Array.isArray(data.remates) ? data.remates : []).filter(s =>
+      s && s.team_id != null && s.expected_goals != null &&
+      Number.isFinite(Number(s.minute)) && Number.isFinite(Number(s.expected_goals)) &&
+      (String(s.team_id) === String(homeId) || String(s.team_id) === String(awayId))
+    );
+    if (!shots.length) return '<div class="pitch-empty">No hay remates con xG suficiente para construir la evolución acumulada.</div>';
+    const maxMinute = Math.max(90, ...shots.map(s => Number(s.minute) + (Number(s.minute_added) || 0)));
+    const groups = [{id:String(homeId),name:homeName,cls:"home"},{id:String(awayId),name:awayName,cls:"away"}];
+    const summaries = [];
+    let maxXg = 0.5;
+    groups.forEach(group => {
+      const rows = shots.filter(s => String(s.team_id) === group.id)
+        .sort((a,b) => (Number(a.minute)+(Number(a.minute_added)||0)) - (Number(b.minute)+(Number(b.minute_added)||0)));
+      let cumulative = 0;
+      const points = [{minute:0,value:0}];
+      rows.forEach(s => {
+        cumulative += Math.max(0, Number(s.expected_goals));
+        points.push({minute:Number(s.minute)+(Number(s.minute_added)||0),value:cumulative,shot:s});
+      });
+      maxXg = Math.max(maxXg,cumulative);
+      summaries.push({...group,points,total:cumulative});
+    });
+    const yMax = Math.ceil(maxXg * 1.2 * 2) / 2 || 1;
+    const x = minute => 45 + (minute / maxMinute) * 610;
+    const y = value => 166 - (value / yMax) * 126;
+    const paths = summaries.map(group => {
+      let d = "";
+      group.points.forEach((p,i) => { d += (i ? " L " : "M ") + x(p.minute).toFixed(1) + " " + y(p.value).toFixed(1); });
+      d += " L " + x(maxMinute).toFixed(1) + " " + y(group.total).toFixed(1);
+      const dots = group.points.slice(1).map(p => '<circle class="pitch-chart-point ' + group.cls + '" cx="' + x(p.minute).toFixed(1) + '" cy="' + y(p.value).toFixed(1) + '" r="3"><title>' + esc((p.shot && p.shot.player && p.shot.player.name) || "Remate") + ' · ' + p.minute + "' · xG acumulado " + p.value.toFixed(2) + '</title></circle>').join("");
+      return '<path class="pitch-chart-line ' + group.cls + '" d="' + d + '"/>' + dots;
+    }).join("");
+    const ticks = [0,15,30,45,60,75,90].map(t => '<text class="pitch-chart-label" x="' + x(t).toFixed(1) + '" y="190" text-anchor="middle">' + t + "'</text>").join("");
+    return '<div class="pitch-chart-wrap"><svg class="pitch-line-chart" viewBox="0 0 680 212" role="img" aria-label="xG acumulado por minuto">' +
+      '<line class="pitch-chart-axis" x1="45" y1="166" x2="655" y2="166"/><line class="pitch-chart-axis" x1="45" y1="40" x2="45" y2="166"/>' +
+      '<line class="pitch-chart-gridline" x1="45" y1="103" x2="655" y2="103"/>' +
+      '<text class="pitch-chart-label" x="10" y="43">xG</text>' + ticks + paths + '</svg>' +
+      '<div class="pitch-chart-legend">' + summaries.map(g => '<span><i class="pitch-dot ' + g.cls + '"></i>' + esc(g.name) + ' · ' + g.total.toFixed(2) + ' xG</span>').join("") + '</div></div>';
+  }
+  function renderPassNetworks(data) {
+    const root = data && data.red_pases || {};
+    const networks = Array.isArray(root.networks) ? root.networks : [];
+    const cards = networks.map(network => {
+      const nodes = Array.isArray(network.nodes) ? network.nodes.filter(n =>
+        n && n.player && Number.isFinite(Number(n.avg_x)) && Number.isFinite(Number(n.avg_y)) &&
+        Number(n.avg_x) >= 0 && Number(n.avg_x) <= 105 && Number(n.avg_y) >= 0 && Number(n.avg_y) <= 68
+      ) : [];
+      const edges = Array.isArray(network.edges) ? network.edges : [];
+      if (!nodes.length) return "";
+      const lookup = new Map(nodes.map(n => [String(n.player.id),n]));
+      const lines = edges.map(edge => {
+        const from = lookup.get(String(edge.from && edge.from.id)), to = lookup.get(String(edge.to && edge.to.id));
+        if (!from || !to) return "";
+        const x1 = 20 + (Number(from.avg_x) / 105) * 600, y1 = 20 + (Number(from.avg_y) / 68) * 350;
+        const x2 = 20 + (Number(to.avg_x) / 105) * 600, y2 = 20 + (Number(to.avg_y) / 68) * 350;
+        const passes = Math.max(1,Number(edge.passes)||1);
+        const width = Math.min(6,0.8 + Math.sqrt(passes) * 0.65);
+        return '<line class="pitch-network-edge" x1="' + x1.toFixed(1) + '" y1="' + y1.toFixed(1) + '" x2="' + x2.toFixed(1) + '" y2="' + y2.toFixed(1) + '" stroke-width="' + width.toFixed(1) + '"><title>' + esc((edge.from && edge.from.name)||"") + ' → ' + esc((edge.to && edge.to.name)||"") + ' · ' + passes + ' pases</title></line>';
+      }).join("");
+      const circles = nodes.map(node => {
+        const px = 20 + (Number(node.avg_x) / 105) * 600, py = 20 + (Number(node.avg_y) / 68) * 350;
+        const strength = Math.max(0,Number(node.strength)||((Number(node.passes)||0)+(Number(node.passes_received)||0)));
+        const radius = Math.max(7,Math.min(14,6 + Math.sqrt(strength)*0.65));
+        const playerName = node.player.name || "Jugador";
+        return '<g><circle class="pitch-network-node" cx="' + px.toFixed(1) + '" cy="' + py.toFixed(1) + '" r="' + radius.toFixed(1) + '"><title>' + esc(playerName) + ' · ' + (node.passes||0) + ' pases · ' + (node.passes_received||0) + ' recibidos</title></circle><text class="pitch-network-label" x="' + px.toFixed(1) + '" y="' + (py+radius+12).toFixed(1) + '" text-anchor="middle">' + esc(playerName) + '</text></g>';
+      }).join("");
+      const center = network.centralization == null ? "—" : (Number(network.centralization)*100).toFixed(1) + "%";
+      return '<div class="pitch-network-card"><div class="pitch-network-head"><strong>' + esc(network.team && network.team.name || "Equipo") + '</strong><span>Centralización: ' + center + '</span></div>' +
+        '<svg class="pitch-network-svg" viewBox="0 0 640 390" role="img" aria-label="Red de pases">' +
+        '<rect class="pitch-field" x="20" y="20" width="600" height="350" rx="2"/><line class="pitch-field-line" x1="320" y1="20" x2="320" y2="370"/><circle class="pitch-field-line" cx="320" cy="195" r="50"/>' +
+        '<rect class="pitch-field-line" x="20" y="105" width="94" height="180"/><rect class="pitch-field-line" x="526" y="105" width="94" height="180"/>' +
+        lines + circles + '</svg><small>Ventana: hasta la primera sustitución · ' + nodes.length + ' jugadores · ' + edges.length + ' conexiones</small></div>';
+    }).filter(Boolean);
+    return cards.length ? '<div class="pitch-network-grid">' + cards.join("") + '</div>' :
+      '<div class="pitch-empty">La red de pases no está disponible en este partido. La fuente solo la genera cuando existe analítica de eventos suficiente.</div>';
+  }
+  function renderMomentum(data, homeName, awayName) {
+    const points = Array.isArray(data.momentum) ? data.momentum.filter(p =>
+      p && Number.isFinite(Number(p.minute)) && Number.isFinite(Number(p.value))
+    ).sort((a,b)=>Number(a.minute)-Number(b.minute)) : [];
+    if (points.length < 2) return '<div class="pitch-empty">El proveedor no dispone de curva de momentum para este encuentro.</div>';
+    const maxMinute = Math.max(90,...points.map(p=>Number(p.minute)));
+    const maxAbs = Math.max(1,...points.map(p=>Math.abs(Number(p.value))));
+    const x = minute => 38 + (minute / maxMinute) * 604;
+    const y = value => 100 - (value / maxAbs) * 72;
+    const segments = points.slice(1).map((p,i) => {
+      const prev = points[i], avg = (Number(prev.value)+Number(p.value))/2;
+      return '<line class="' + (avg >= 0 ? "pitch-momentum-home" : "pitch-momentum-away") + '" x1="' + x(Number(prev.minute)).toFixed(1) + '" y1="' + y(Number(prev.value)).toFixed(1) + '" x2="' + x(Number(p.minute)).toFixed(1) + '" y2="' + y(Number(p.value)).toFixed(1) + '"/>';
+    }).join("");
+    const labels = [0,15,30,45,60,75,90].map(t=>'<text class="pitch-chart-label" x="'+x(t).toFixed(1)+'" y="190" text-anchor="middle">'+t+"'</text>").join("");
+    return '<div class="pitch-chart-wrap"><svg class="pitch-line-chart" viewBox="0 0 680 210" role="img" aria-label="Momentum del partido">' +
+      '<line class="pitch-chart-axis" x1="38" y1="100" x2="642" y2="100"/><line class="pitch-chart-gridline" x1="38" y1="28" x2="642" y2="28"/><line class="pitch-chart-gridline" x1="38" y1="172" x2="642" y2="172"/>' +
+      '<text class="pitch-chart-label" x="8" y="32">+' + Math.round(maxAbs) + '</text><text class="pitch-chart-label" x="8" y="174">-' + Math.round(maxAbs) + '</text>' +
+      segments + labels + '</svg><div class="pitch-chart-legend"><span><i class="pitch-dot home"></i>' + esc(homeName) + ' · presión favorable sobre la línea cero</span><span><i class="pitch-dot away"></i>' + esc(awayName) + ' · presión favorable bajo la línea cero</span></div></div>';
+  }
+  function renderAdvancedPlayers(data, homeName, awayName, homeId, awayId) {
+    const raw = data && data.analitica_avanzada_jugadores;
+    const players = Array.isArray(raw) ? raw : raw && Array.isArray(raw.players) ? raw.players : [];
+    if (!players.length) return '<div class="pitch-empty">No se publicaron métricas avanzadas individuales para este partido.</div>';
+    const sides = [{id:String(homeId),name:homeName},{id:String(awayId),name:awayName}];
+    const cards = sides.map(side => {
+      const rows = players.filter(p=>String(p.team_id||"")===side.id).sort((a,b)=>
+        (Number(b.possession_value && b.possession_value.vaep_total)||Number(b.possession_value && b.possession_value.xt_total)||0) -
+        (Number(a.possession_value && a.possession_value.vaep_total)||Number(a.possession_value && a.possession_value.xt_total)||0)
+      ).slice(0,12);
+      if (!rows.length) return "";
+      const body = rows.map(p=>{
+        const pv=p.possession_value||{}, pass=p.passing||{}, carry=p.carrying||{}, create=p.creation||{}, def=p.defending||{};
+        const player=p.player||{};
+        return '<tr><td>' + esc(player.name||"Jugador") + '</td><td>' + esc(p.minutes_played??"—") + '</td>' +
+          '<td>' + esc(pv.vaep_total==null?"—":fmt(pv.vaep_total,3)) + '</td><td>' + esc(pv.xt_total==null?"—":fmt(pv.xt_total,3)) + '</td>' +
+          '<td>' + esc(pass.progressive_passes??"—") + '</td><td>' + esc(carry.progressive_carries??"—") + '</td>' +
+          '<td>' + esc(create.xag==null?"—":fmt(create.xag,2)) + '</td><td>' + esc(def.tackles??"—") + '</td><td>' + esc(def.interceptions??"—") + '</td></tr>';
+      }).join("");
+      return '<div class="pitch-subcard"><h4>' + esc(side.name) + '</h4><div class="research-table-scroll"><table class="research-table"><thead><tr><th>Jugador</th><th>Min</th><th>VAEP</th><th>xT</th><th>P. prog.</th><th>C. prog.</th><th>xAG</th><th>Tkl</th><th>Int</th></tr></thead><tbody>' + body + '</tbody></table></div></div>';
+    }).filter(Boolean);
+    return cards.length ? '<div class="pitch-two-col">' + cards.join("") + '</div>' :
+      '<div class="pitch-empty">La fuente no publicó métricas individuales para los futbolistas de este encuentro.</div>';
+  }
+  function renderMatchEvents(data) {
+    const events = Array.isArray(data && data.eventos) ? data.eventos.slice().sort((a,b)=>
+      (Number(a.minute)||0)+(Number(a.minute_added)||0)/1000 - ((Number(b.minute)||0)+(Number(b.minute_added)||0)/1000)
+    ) : [];
+    if (!events.length) return '<div class="pitch-empty">No hay goles, tarjetas, sustituciones ni penaltis publicados en la cronología.</div>';
+    const labels = {goal:"GOL",yellowcard:"AMARILLA",redcard:"ROJA",substitution:"CAMBIO",penalty:"PENALTI"};
+    const rows = events.map(e=>{
+      const kind=String(e.event_type||e.type||"evento").toLowerCase().replaceAll("_","");
+      const label=labels[kind]||kind.toUpperCase();
+      const person=e.player && e.player.name || e.sub_in_player && e.sub_in_player.name || e.player_name || "—";
+      const detail=e.sub_in_player && e.player ? ("Entra " + e.sub_in_player.name + " · Sale " + e.player.name) : (e.detail||"—");
+      const minute=e.minute==null?"—":String(e.minute)+(e.minute_added?"+"+e.minute_added:"")+"' ";
+      const score=e.score_home==null||e.score_away==null?"—":e.score_home+"-"+e.score_away;
+      return '<tr><td>' + esc(minute) + '</td><td>' + esc(label) + '</td><td>' + esc(person) + '</td><td>' + esc(detail) + '</td><td>' + esc(score) + '</td></tr>';
+    }).join("");
+    return '<div class="research-table-scroll"><table class="research-table"><thead><tr><th>Min</th><th>Evento</th><th>Jugador</th><th>Detalle</th><th>Marcador</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+  }
+
   function renderAnalysis(data) {
     const live = data.live_snapshot && data.live_snapshot.live === true ? data.live_snapshot : null;
     const baseMatch = data.partido || state.selected || {};
@@ -310,9 +494,15 @@
     html += '</section>';
     if (!live) html += renderPlayerStats(data.estadisticas_jugadores,homeId,awayId,homeName,awayName);
     html += '<section class="research-card"><h3>Remates de mayor xG</h3>'+shotTable+'</section>';
+    html += '<section class="research-card"><h3>Mapa de tiros</h3>'+renderShotMap(data,homeName,awayName,homeId,awayId)+'</section>';
+    html += '<section class="research-card"><h3>xG acumulado durante el partido</h3>'+renderXgTimeline(data,homeName,awayName,homeId,awayId)+'</section>';
     html += '<section class="research-card"><h3>Mapas de actividad</h3>'+renderHeatmaps(data)+'</section>';
+    html += '<section class="research-card"><h3>Red de pases</h3>'+renderPassNetworks(data)+'</section>';
+    html += '<section class="research-card"><h3>Momentum y dominio por minuto</h3>'+renderMomentum(data,homeName,awayName)+'</section>';
     html += '<section class="research-card"><h3>Analítica avanzada por equipo</h3>'+renderAdvanced(data)+'</section>';
+    html += '<section class="research-card"><h3>Rendimiento avanzado por jugador</h3>'+renderAdvancedPlayers(data,homeName,awayName,homeId,awayId)+'</section>';
     if (live) html += '<section class="research-card"><h3>Eventos en directo</h3>'+renderLiveEvents(live)+'<p class="pitch-data-note">Actualización automática cada 15 segundos mientras el proveedor mantiene el partido en estado live. El snapshot incluye la antigüedad y si el dato anterior se está sirviendo como respaldo.</p></section>';
+    else html += '<section class="research-card"><h3>Cronología del encuentro</h3>'+renderMatchEvents(data)+'</section>';
     const h2h = data.h2h && Array.isArray(data.h2h.recent_matches) ? data.h2h.recent_matches.filter(item=>item.finished===true).slice(0,8) : [];
     if (h2h.length) html += '<section class="research-card"><h3>Enfrentamientos recientes</h3><div class="research-table-scroll"><table class="research-table"><thead><tr><th>Fecha</th><th>Local</th><th>Marcador</th><th>Visitante</th></tr></thead><tbody>'+h2h.map(item=>'<tr><td>'+esc(item.time_utc||"—")+'</td><td>'+esc(item.home && item.home.name||"—")+'</td><td>'+esc(item.score_home)+"-"+esc(item.score_away)+'</td><td>'+esc(item.away && item.away.name||"—")+'</td></tr>').join("")+'</tbody></table></div></section>';
     $("pitch-output").innerHTML = html;
