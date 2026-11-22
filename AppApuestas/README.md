@@ -109,6 +109,12 @@ El modelo de goles no incorpora todavía lesiones ni alineaciones. Los mercados 
 - Reporta Brier multiclase, Log Loss, exactitud, calibración por rangos de confianza y predicciones recientes.
 - El backtest se limita a la competición/temporada seleccionada. Muestras pequeñas se etiquetan como exploratorias; no demuestra rentabilidad ni generalización a otras ligas.
 
+## Mejoras de visualización táctica e historial
+
+La vista de Research incluye mapas de remates, xG acumulado, mapas de actividad, red de pases, momentum, cronología del encuentro, métricas avanzadas de equipo/jugador y forma reciente. Cada bloque depende de la disponibilidad del dato del proveedor. El mapa de actividad registra eventos con coordenadas; no es tracking GPS continuo. La forma reciente usa los cinco resultados previos dentro de la temporada seleccionada y no considera partidos futuros.
+
+La revisión comparativa de repositorios, herramientas y licencias se encuentra en [ANALISIS_HERRAMIENTAS.md](ANALISIS_HERRAMIENTAS.md). Incluye recomendaciones para fútbol, NBA, NFL y MLB y una lista de fuentes que no conviene automatizar sin permiso.
+
 ### Versión
 
 API backend 1.0.9 o posterior.
