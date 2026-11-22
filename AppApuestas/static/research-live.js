@@ -266,12 +266,23 @@
   }
   function renderAdvanced(data) {
     const teams = data.analitica_avanzada && Array.isArray(data.analitica_avanzada.teams) ? data.analitica_avanzada.teams : [];
-    if (!teams.length) return '<div class="pitch-empty">La analítica avanzada por eventos no está disponible para este partido; no se sustituye con cifras inventadas.</div>';
+    if (!teams.length) return '<div class="pitch-empty">La analítica avanzada por eventos no está disponible para este partido; no se sustituyen métricas ausentes por cifras inventadas.</div>';
     return '<div class="pitch-two-col">' + teams.map(item => {
-      const name = item.team && item.team.name || "Equipo", pass=item.passing||{}, def=item.defending||{}, territory=item.territory||{}, tempo=item.tempo||{}, pv=item.possession_value||{};
-      const metrics = [["Precisión de pase",pass.pass_accuracy==null?null:fmt(pass.pass_accuracy,1)+"%"],["Pases progresivos",pass.progressive_passes],["Pases clave",pass.key_passes],["PPDA",def.ppda],["Recuperaciones altas",def.high_turnovers],["Field tilt",territory.field_tilt==null?null:fmt(territory.field_tilt,1)+"%"],["Entradas al área",territory.box_entries],["xT total",pv.xt_total==null?null:fmt(pv.xt_total,3)]];
-      return '<div class="pitch-subcard"><h4>' + esc(name) + '</h4>' + metrics.filter(x=>x[1]!=null).map(x=>'<div class="pitch-teamline"><span>'+esc(x[0])+'</span><strong>'+esc(x[1])+'</strong></div>').join("") + '</div>';
-    }).join("") + '</div>';
+      const name = item.team && item.team.name || "Equipo", pass=item.passing||{}, def=item.defending||{}, territory=item.territory||{}, tempo=item.tempo||{}, pv=item.possession_value||{}, carry=item.carrying||{}, creation=item.creation||{};
+      const metrics = [
+        ["Valor de posesión xT",pv.xt_total,3],["VAEP total",pv.vaep_total,3],["VAEP ofensivo",pv.vaep_offensive,3],["VAEP defensivo",pv.vaep_defensive,3],
+        ["Pases intentados",pass.passes,0],["Precisión de pase",pass.pass_accuracy==null?null:fmt(pass.pass_accuracy,1)+"%",1],
+        ["Pases progresivos",pass.progressive_passes,0],["Pases al área",pass.passes_into_box,0],["Pases clave",pass.key_passes,0],
+        ["Conducciones progresivas",carry.progressive_carries,0],["Conducciones al área",carry.carries_into_box,0],["Duelos 1v1 ganados",carry.take_ons_won,0],
+        ["Ocasiones creadas",creation.chances_created,0],["xAG",creation.xag,2],
+        ["Tackles",def.tackles,0],["Intercepciones",def.interceptions,0],["PPDA",def.ppda,2],
+        ["Recuperaciones altas",def.high_turnovers,0],["Recuperaciones en 5 s",def.counterpress_regains_5s,0],
+        ["Posesión",territory.possession_pct==null?null:fmt(territory.possession_pct,1)+"%",1],
+        ["Field tilt",territory.field_tilt==null?null:fmt(territory.field_tilt,1)+"%",1],["Entradas al área",territory.box_entries,0],
+        ["Pases por secuencia",tempo.passes_per_sequence,2],["Ataques directos",tempo.direct_attacks,0]
+      ];
+      return '<div class="pitch-subcard"><h4>' + esc(name) + '</h4>' + metrics.filter(x=>x[1]!=null).map(x=>'<div class="pitch-teamline"><span>'+esc(x[0])+'</span><strong>'+esc(typeof x[1]==="number" ? fmt(x[1],x[2]) : x[1])+'</strong></div>').join("") + '</div>';
+    }).join("") + '</div><p class="pitch-data-note">xT y VAEP son métricas de valor de acciones. PPDA, presión, progresión y posesión se muestran solo cuando el proveedor los publica.</p>';
   }
 
   function pitchFieldSvg() {
