@@ -39,10 +39,17 @@ LEAGUES = {
 
 
 class ESPNDataError(RuntimeError):
-    def __init__(self, message: str, status_code: int = 502, code: str = "ESPN_ERROR"):
+    def __init__(
+        self,
+        message: str,
+        status_code: int = 502,
+        code: str = "ESPN_ERROR",
+        upstream_status: int | None = None,
+    ):
         super().__init__(message)
         self.status_code = status_code
         self.code = code
+        self.upstream_status = upstream_status
 
 
 def espn_status() -> dict[str, Any]:
@@ -238,11 +245,11 @@ class ESPNPublicClient:
         if response.status_code == 404 and optional:
             return {}
         if response.status_code == 429:
-            raise ESPNDataError("ESPN limitó temporalmente las consultas. Espera y vuelve a intentar.", 503, "ESPN_RATE_LIMIT")
+            raise ESPNDataError("ESPN limitó temporalmente las consultas. Espera y vuelve a intentar.", 503, "ESPN_RATE_LIMIT", response.status_code)
         if response.status_code >= 500:
-            raise ESPNDataError("ESPN respondió con un error temporal HTTP " + str(response.status_code) + ".", 502, "ESPN_UPSTREAM_ERROR")
+            raise ESPNDataError("ESPN respondió con un error temporal HTTP " + str(response.status_code) + ".", 502, "ESPN_UPSTREAM_ERROR", response.status_code)
         if response.status_code >= 400:
-            raise ESPNDataError("ESPN rechazó la consulta HTTP " + str(response.status_code) + ".", 502, "ESPN_BAD_REQUEST")
+            raise ESPNDataError("ESPN rechazó la consulta HTTP " + str(response.status_code) + ".", 502, "ESPN_BAD_REQUEST", response.status_code)
         try:
             data = response.json()
         except ValueError as exc:

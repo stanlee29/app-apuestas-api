@@ -352,6 +352,32 @@ def research_espn_status():
     return espn_status()
 
 
+@app.get("/api/v1/research/espn/probe", tags=["Investigación"])
+def research_espn_probe(
+    league: str = Query(default="eng.1", min_length=3, max_length=30),
+    fecha: date = Query(..., description="Fecha YYYY-MM-DD"),
+):
+    """Prueba de conectividad con ESPN sin ocultar errores del proveedor."""
+    try:
+        result = ESPNPublicClient().scoreboard(league, fecha, limit=1)
+        return {
+            "ok": True,
+            "fuente": "ESPN public JSON",
+            "liga": result.get("liga"),
+            "eventos_encontrados": result.get("total_eventos", 0),
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except ESPNDataError as exc:
+        return {
+            "ok": False,
+            "codigo": exc.code,
+            "mensaje": str(exc),
+            "http_status_origen": exc.upstream_status,
+            "http_status_api": exc.status_code,
+        }
+
+
 @app.get("/api/v1/research/espn/leagues", tags=["Investigación"])
 def research_espn_leagues():
     return {
