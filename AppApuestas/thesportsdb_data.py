@@ -222,28 +222,38 @@ class TheSportsDBClient:
     ) -> dict[str, Any]:
         if not event_id.isdigit() or len(event_id) > 20:
             raise ValueError("Identificador de evento no válido.")
-        event_payload = self._get("lookupevent.php", {"id": event_id}, cache_seconds=3600, optional=True)
-        event_rows = event_payload.get("events") or []
-        event = event_rows[0] if event_rows and isinstance(event_rows[0], dict) else {}
-        home_id = str(event.get("idHomeTeam") or home_team_id or "")
-        away_id = str(event.get("idAwayTeam") or away_team_id or "")
-        if home_id and (not home_id.isdigit() or len(home_id) > 15):
-            raise ValueError("Identificador de equipo local no válido.")
-        if away_id and (not away_id.isdigit() or len(away_id) > 15):
-            raise ValueError("Identificador de equipo visitante no válido.")
-
+        for team_id in (home_team_id, away_team_id):
+            if team_id and (not team_id.isdigit() or len(team_id) > 15):
+                raise ValueError("Identificador de equipo no válido.")
+        # Dos consultas por evento; las muestras de jugadores son una acción separada.
         lineup_payload = self._get("lookuplineup.php", {"id": event_id}, cache_seconds=300, optional=True)
         stats_payload = self._get("lookupeventstats.php", {"id": event_id}, cache_seconds=300, optional=True)
-        timeline_payload = self._get("lookuptimeline.php", {"id": event_id}, cache_seconds=300, optional=True)
         lineups = normalize_lineup(lineup_payload.get("lineup") or [])
         stats = normalize_stats(stats_payload.get("eventstats") or [])
-        timeline = timeline_payload.get("timeline") or []
+        return {
+            "fuente": "TheSportsDB API v1",
+            "evento_id": event_id,
+            "alineaciones": lineups,
+            "estadisticas": stats,
+            "advertencia": "La cobertura y actualización dependen de TheSportsDB. Contrasta nombres, alineaciones y estadísticas con PitchAPI antes de usarlos en un modelo.",
+            "atribucion": "TheSportsDB",
+        }
 
+    def event_rosters(
+        self,
+        event_id: str,
+        home_team_id: str | None,
+        away_team_id: str | None,
+    ) -> dict[str, Any]:
+        if not event_id.isdigit() or len(event_id) > 20:
+            raise ValueError("Identificador de evento no válido.")
         rosters: dict[str, Any] = {}
-        for side, team_id in (("home", home_id), ("away", away_id)):
+        for side, team_id in (("home", home_team_id), ("away", away_team_id)):
             if not team_id:
                 rosters[side] = {"jugadores": [], "nota": "No se recibió el ID del club."}
                 continue
+            if not team_id.isdigit() or len(team_id) > 15:
+                raise ValueError("Identificador de equipo no válido.")
             payload = self._get("lookup_all_players.php", {"id": team_id}, cache_seconds=21600, optional=True)
             players = normalize_roster(payload.get("player") or [])
             rosters[side] = {
@@ -252,14 +262,8 @@ class TheSportsDBClient:
                 "limite_gratuito": 10,
                 "nota": "Muestra parcial de hasta 10 fichas activas; puede no incluir a toda la plantilla.",
             }
-
         return {
             "fuente": "TheSportsDB API v1",
-            "evento": event,
-            "alineaciones": lineups,
-            "estadisticas": stats,
-            "timeline": timeline[:30],
+            "evento_id": event_id,
             "plantillas": rosters,
-            "advertencia": "La cobertura y actualización dependen de TheSportsDB. Contrasta nombres, alineaciones y estadísticas con PitchAPI antes de usarlos en un modelo.",
-            "atribucion": "TheSportsDB",
         }

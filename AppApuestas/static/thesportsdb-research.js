@@ -80,7 +80,13 @@
     const e=state.selected,b=$("tsdb-analyze"),old=b.textContent;b.disabled=true;b.textContent="Consultando…";$("tsdb-output").innerHTML="";
     status("Consultando evento, estadísticas, alineaciones y muestras de jugadores…");
     const url="/api/v1/research/thesportsdb/events/"+encodeURIComponent(e.id)+"/analysis?home_team_id="+encodeURIComponent(e.home_team.id)+"&away_team_id="+encodeURIComponent(e.away_team.id);
-    try{const data=await get(url);render(data);}catch(err){status("No se pudo completar la consulta: "+err.message,true);}
+    const playersUrl="/api/v1/research/thesportsdb/events/"+encodeURIComponent(e.id)+"/players?home_team_id="+encodeURIComponent(e.home_team.id)+"&away_team_id="+encodeURIComponent(e.away_team.id);
+    try{
+      const data=await get(url);
+      const players=await get(playersUrl);
+      data.plantillas=players.plantillas||{};
+      render(data);
+    }catch(err){status("No se pudo completar la consulta: "+err.message,true);}
     finally{b.disabled=false;b.textContent=old;}
   }
   function init(){

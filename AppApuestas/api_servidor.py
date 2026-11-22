@@ -364,6 +364,24 @@ def research_thesportsdb_events(
         }) from exc
 
 
+@app.get("/api/v1/research/thesportsdb/events/{event_id}/players", tags=["Investigación"])
+def research_thesportsdb_event_players(
+    event_id: str,
+    home_team_id: str | None = Query(default=None, max_length=15),
+    away_team_id: str | None = Query(default=None, max_length=15),
+):
+    try:
+        return TheSportsDBClient().event_rosters(
+            event_id, home_team_id=home_team_id, away_team_id=away_team_id
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except TheSportsDBError as exc:
+        raise HTTPException(status_code=exc.status_code, detail={
+            "codigo": exc.code, "mensaje": str(exc)
+        }) from exc
+
+
 @app.get("/api/v1/research/thesportsdb/events/{event_id}/analysis", tags=["Investigación"])
 def research_thesportsdb_event_analysis(
     event_id: str,
