@@ -45,6 +45,7 @@ from nfl_research import (
 )
 from mlb_research import MLBResearchError, mlb_status, statcast as mlb_statcast
 from research_storage import ResearchStorage, ResearchStorageError
+from odds_collector import OddsCollectionError, collect_daily_odds
 from open_football_history import OpenFootballHistoryError, open_football_status, team_history as open_football_team_history
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -390,6 +391,49 @@ def research_football_match_analysis(match_id: str):
 @app.get("/api/v1/research/storage/status", tags=["Historial"])
 def research_storage_status():
     return ResearchStorage().status()
+
+
+@app.post("/api/v1/research/collector/daily", tags=["Historial"])
+def research_daily_odds_collector(
+    x_app_ingest_token: str | None = Header(default=None, alias="X-App-Ingest-Token"),
+):
+    expected = os.getenv("APP_INGEST_TOKEN", "").strip()
+    if not expected:
+        raise HTTPException(status_code=404, detail="La recolección programada no está habilitada.")
+    if not x_app_ingest_token or not hmac.compare_digest(x_app_ingest_token, expected):
+        raise HTTPException(status_code=403, detail="Token de recolección no válido.")
+
+    storage = ResearchStorage()
+    if not storage.configured:
+        raise HTTPException(status_code=503, detail="Supabase no está configurado para AppApuestas.")
+    try:
+        return collect_daily_odds(_client(), storage)
+    except OddsCollectionError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except (ProviderConfigurationError, ProviderAccessError, ProviderResponseError) as exc:
+        raise _provider_http_error(exc) from exc
+    except ResearchStorageError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/api/v1/research/odds/history/{event_id}", tags=["Historial"])
+def research_odds_history(
+    event_id: str,
+    limit: int = Query(default=30, ge=1, le=100),
+):
+    storage = ResearchStorage()
+    if not storage.configured:
+        raise HTTPException(status_code=503, detail="Supabase no está configurado para AppApuestas.")
+    try:
+        rows = storage.history("sportsgameodds", event_id, limit=limit)
+    except ResearchStorageError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {
+        "provider": "sportsgameodds",
+        "event_id": event_id,
+        "total_snapshots": len(rows),
+        "historial": rows,
+    }
 
 
 @app.get("/api/v1/research/storage/history/{match_id}", tags=["Historial"])
