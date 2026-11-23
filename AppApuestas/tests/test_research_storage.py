@@ -121,6 +121,43 @@ class ResearchStorageTests(unittest.TestCase):
         self.assertIsNone(data["metricas_avanzadas"][0]["remates_favor"])
         self.assertEqual(get_rows.call_count, 3)
 
+    def test_daily_odds_snapshot_matches_exact_teams_and_date(self):
+        storage = self._storage()
+        snapshots = [{
+            "provider": "sportsgameodds",
+            "match_id": "event-1",
+            "snapshot_date": "2026-11-23",
+            "payload": {
+                "local": "Como",
+                "visitante": "AEK Athens",
+                "fecha_hora": "2026-11-26T01:00:00.000Z",
+                "liga": "Champions League",
+                "mercados": [{"nombre": "Moneyline", "selecciones": []}],
+                "mercados_disponibles": 1,
+            },
+        }]
+        with patch.object(storage, "_get_rows", return_value=snapshots) as get_rows:
+            data = storage.odds_snapshots_for_teams("Como", "AEK Athens", "2026-11-26")
+        self.assertEqual(data["total_snapshots"], 1)
+        self.assertEqual(data["snapshots"][0]["match_id"], "event-1")
+        params = get_rows.call_args.args[1]
+        self.assertEqual(params["provider"], "eq.sportsgameodds")
+        self.assertEqual(params["payload->>fecha_hora"], "like.2026-11-26*")
+
+    def test_daily_odds_snapshot_rejects_wrong_team_pair(self):
+        storage = self._storage()
+        snapshots = [{
+            "payload": {
+                "local": "Como",
+                "visitante": "LASK",
+                "fecha_hora": "2026-11-26T01:00:00.000Z",
+                "mercados": [],
+            },
+        }]
+        with patch.object(storage, "_get_rows", return_value=snapshots):
+            data = storage.odds_snapshots_for_teams("Como", "AEK Athens", "2026-11-26")
+        self.assertEqual(data["total_snapshots"], 0)
+
     def test_market_archive_follows_alias_to_canonical_event(self):
         storage = self._storage()
         with patch.object(
