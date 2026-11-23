@@ -17,3 +17,8 @@ venv/
 data/open_football/*.parquet
 data/open_football/*.part
 data/open_football/*.ATTRIBUTION.txt
+
+# Local optional football results parquet (not committed)
+/AppApuestas/datos/open_football/*.parquet
+/AppApuestas/datos/open_football/*.part
+/AppApuestas/datos/open_football/*.ATTRIBUTION.txt
