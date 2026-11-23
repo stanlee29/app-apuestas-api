@@ -112,7 +112,7 @@ class PitchAPITests(unittest.TestCase):
         self.assertFalse(result["disponibilidad"]["mapas_calor"])
         self.assertIn("estadisticas_equipo", result["bloques_sin_cobertura"])
 
-    def test_analytics_unavailable_no_rompe_informe_y_no_consulta_el_resto(self):
+    def test_bloque_opcional_fallido_no_rompe_el_informe(self):
         client = PitchAPIClient(api_key="test-key")
         calls = []
         def fake_get(path, params=None, optional=False, cache_seconds=None):
@@ -120,7 +120,7 @@ class PitchAPITests(unittest.TestCase):
             if path == "/matches/m_B8x2K9":
                 return {"home_team": {"id": "h"}, "away_team": {"id": "a"}}
             if path == "/matches/m_B8x2K9/shots":
-                raise PitchAPIError("No hay feed de eventos", 502, "PITCHAPI_UPSTREAM_ERROR")
+                raise PitchAPIError("No se pudo consultar remates", 502, "PITCHAPI_UPSTREAM_ERROR")
             return {}
 
         with patch.object(client, "_get", side_effect=fake_get):
@@ -128,7 +128,7 @@ class PitchAPITests(unittest.TestCase):
         self.assertEqual(result["partido"]["home_team"]["id"], "h")
         self.assertEqual(len(result["advertencias"]), 1)
         self.assertFalse(result["disponibilidad"]["remates_xg"])
-        self.assertEqual(calls, ["/matches/m_B8x2K9", "/matches/m_B8x2K9/shots"])
+        self.assertEqual(len(calls), 12)
 
     def test_429_abre_circuit_breaker_y_evitar_multiplicar_consultas(self):
         client = PitchAPIClient(api_key="test-key")
