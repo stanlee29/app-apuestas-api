@@ -238,6 +238,134 @@ def game_logs(
     return _cached(key, load)
 
 
+def game_boxscore(game_id: str) -> dict[str, Any]:
+    if not re.fullmatch(r"\\d{8,12}", game_id):
+        raise ValueError("game_id NBA debe ser un identificador numérico válido.")
+    key = "boxscore:" + game_id
+
+    def load():
+        try:
+            from nba_api.stats.endpoints import boxscoretraditionalv3
+            endpoint = boxscoretraditionalv3.BoxScoreTraditionalV3(game_id=game_id, timeout=_TIMEOUT)
+            players = dataframe_records(endpoint.player_stats.get_data_frame(), 80)
+            teams_data = dataframe_records(endpoint.team_stats.get_data_frame(), 10)
+        except ImportError as exc:
+            raise NBAResearchError("Instala nba_api para consultar box scores NBA.", 503, "NBA_NOT_INSTALLED") from exc
+        warnings: list[str] = []
+        advanced_players: list[dict[str, Any]] = []
+        advanced_teams: list[dict[str, Any]] = []
+        tracking_players: list[dict[str, Any]] = []
+        try:
+            from nba_api.stats.endpoints import boxscoreadvancedv3
+            advanced = boxscoreadvancedv3.BoxScoreAdvancedV3(game_id=game_id, timeout=_TIMEOUT)
+            advanced_players = dataframe_records(advanced.player_stats.get_data_frame(), 80)
+            advanced_teams = dataframe_records(advanced.team_stats.get_data_frame(), 10)
+        except Exception as exc:
+            warnings.append("Box score avanzado no disponible: " + str(exc)[:250])
+        try:
+            from nba_api.stats.endpoints import boxscoreplayertrackv3
+            tracking = boxscoreplayertrackv3.BoxScorePlayerTrackV3(game_id=game_id, timeout=_TIMEOUT)
+            tracking_players = dataframe_records(tracking.player_stats.get_data_frame(), 80)
+        except Exception as exc:
+            warnings.append("Player tracking no disponible: " + str(exc)[:250])
+        return {
+            "fuente": "NBA.com Stats",
+            "game_id": game_id,
+            "jugadores": players,
+            "equipos": teams_data,
+            "jugadores_avanzado": advanced_players,
+            "equipos_avanzado": advanced_teams,
+            "tracking_jugadores": tracking_players,
+            "advertencias": warnings,
+            "cache_segundos": _CACHE_TTL,
+        }
+    return _cached(key, load)
+
+
+def game_play_by_play(game_id: str, limit: int = 1000) -> dict[str, Any]:
+    if not re.fullmatch(r"\\d{8,12}", game_id):
+        raise ValueError("game_id NBA debe ser un identificador numérico válido.")
+    limit = max(1, min(2500, int(limit)))
+    key = f"pbp:{game_id}:{limit}"
+
+    def load():
+        try:
+            from nba_api.stats.endpoints import playbyplayv3
+            endpoint = playbyplayv3.PlayByPlayV3(game_id=game_id, timeout=_TIMEOUT)
+            rows = dataframe_records(endpoint.play_by_play.get_data_frame(), limit)
+            return {
+                "fuente": "NBA.com Stats",
+                "game_id": game_id,
+                "total_jugadas": len(rows),
+                "jugadas": rows,
+                "cache_segundos": _CACHE_TTL,
+            }
+        except ImportError as exc:
+            raise NBAResearchError("Instala nba_api para consultar el play-by-play NBA.", 503, "NBA_NOT_INSTALLED") from exc
+    return _cached(key, load)
+
+
+def season_stats(
+    season: str | None = None,
+    entity: str = "player",
+    season_type: str = "Regular Season",
+    per_mode: str = "PerGame",
+    measure_type: str = "Base",
+    limit: int = 500,
+) -> dict[str, Any]:
+    season = season or current_nba_season()
+    if not re.fullmatch(r"\\d{4}-\\d{2}", season):
+        raise ValueError("season debe tener formato YYYY-YY.")
+    if entity not in {"player", "team"}:
+        raise ValueError("entity debe ser player o team.")
+    if season_type not in {"Regular Season", "Playoffs", "Pre Season", "All Star"}:
+        raise ValueError("season_type no válido.")
+    if per_mode not in {"PerGame", "Totals", "Per36", "Per100Possessions"}:
+        raise ValueError("per_mode no válido.")
+    if measure_type not in {"Base", "Advanced", "Misc", "Four Factors", "Scoring", "Opponent"}:
+        raise ValueError("measure_type no válido.")
+    limit = max(1, min(2000, int(limit)))
+    key = f"season-stats:{season}:{entity}:{season_type}:{per_mode}:{measure_type}:{limit}"
+
+    def load():
+        try:
+            if entity == "player":
+                from nba_api.stats.endpoints import leaguedashplayerstats
+                endpoint = leaguedashplayerstats.LeagueDashPlayerStats(
+                    season=season,
+                    season_type_all_star=season_type,
+                    per_mode_detailed=per_mode,
+                    measure_type_detailed_defense=measure_type,
+                    timeout=_TIMEOUT,
+                )
+                frame = endpoint.league_dash_player_stats.get_data_frame()
+            else:
+                from nba_api.stats.endpoints import leaguedashteamstats
+                endpoint = leaguedashteamstats.LeagueDashTeamStats(
+                    season=season,
+                    season_type_all_star=season_type,
+                    per_mode_detailed=per_mode,
+                    measure_type_detailed_defense=measure_type,
+                    timeout=_TIMEOUT,
+                )
+                frame = endpoint.league_dash_team_stats.get_data_frame()
+            rows = dataframe_records(frame, limit)
+            return {
+                "fuente": "NBA.com Stats",
+                "season": season,
+                "entity": entity,
+                "season_type": season_type,
+                "per_mode": per_mode,
+                "measure_type": measure_type,
+                "total_registros": len(rows),
+                "estadisticas": rows,
+                "cache_segundos": _CACHE_TTL,
+            }
+        except ImportError as exc:
+            raise NBAResearchError("Instala nba_api para consultar estadísticas de temporada NBA.", 503, "NBA_NOT_INSTALLED") from exc
+    return _cached(key, load)
+
+
 def teams() -> dict[str, Any]:
     def load():
         try:
