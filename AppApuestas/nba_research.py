@@ -239,7 +239,7 @@ def game_logs(
 
 
 def game_boxscore(game_id: str) -> dict[str, Any]:
-    if not re.fullmatch(r"\\d{8,12}", game_id):
+    if not re.fullmatch(r"\d{8,12}", game_id):
         raise ValueError("game_id NBA debe ser un identificador numérico válido.")
     key = "boxscore:" + game_id
 
@@ -314,7 +314,7 @@ def season_stats(
     limit: int = 500,
 ) -> dict[str, Any]:
     season = season or current_nba_season()
-    if not re.fullmatch(r"\\d{4}-\\d{2}", season):
+    if not re.fullmatch(r"\d{4}-\d{2}", season):
         raise ValueError("season debe tener formato YYYY-YY.")
     if entity not in {"player", "team"}:
         raise ValueError("entity debe ser player o team.")
