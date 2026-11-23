@@ -39,6 +39,7 @@
     const params=nflParams();
     params.set("entity",$("nfl-stats-entity").value);
     params.set("summary_level",$("nfl-stats-level").value);
+    if($("nfl-stats-level").value!=="week")params.delete("week");
     params.set("limit","2500");
     status("Consultando estadísticas NFL por jugador/equipo…");
     try{
