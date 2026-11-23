@@ -24,6 +24,7 @@ alter table public.research_snapshots enable row level security;
 -- Intentionally no anon/authenticated policies. The backend-only service role
 -- bypasses RLS and is never exposed to the browser or mobile client.
 revoke all on table public.research_snapshots from anon, authenticated;
+grant select, insert, update on table public.research_snapshots to service_role;
 
 create or replace function public.set_research_snapshots_updated_at()
 returns trigger
