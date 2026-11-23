@@ -29,6 +29,34 @@ class ResearchStorageTests(unittest.TestCase):
         with patch.dict("os.environ", {"SUPABASE_URL": "http://example.com", "SUPABASE_SERVICE_ROLE_KEY": "secret"}, clear=False):
             self.assertFalse(ResearchStorage().configured)
 
+    def test_new_secret_key_uses_apikey_without_bearer(self):
+        with patch.dict(
+            "os.environ",
+            {
+                "SUPABASE_URL": "https://example.supabase.co",
+                "SUPABASE_SECRET_KEY": "sb_secret_example",
+                "SUPABASE_SERVICE_ROLE_KEY": "legacy_should_not_win",
+            },
+            clear=False,
+        ):
+            headers = ResearchStorage()._headers()
+        self.assertEqual(headers["apikey"], "sb_secret_example")
+        self.assertNotIn("Authorization", headers)
+
+    def test_legacy_service_role_key_keeps_bearer_compatibility(self):
+        with patch.dict(
+            "os.environ",
+            {
+                "SUPABASE_URL": "https://example.supabase.co",
+                "SUPABASE_SECRET_KEY": "",
+                "SUPABASE_SERVICE_ROLE_KEY": "legacy-jwt",
+            },
+            clear=False,
+        ):
+            headers = ResearchStorage()._headers()
+        self.assertEqual(headers["apikey"], "legacy-jwt")
+        self.assertEqual(headers["Authorization"], "Bearer legacy-jwt")
+
     def test_team_filter_quotes_team_name_and_rejects_filter_injection(self):
         self.assertEqual(
             ResearchStorage._team_or_filter("  Real Madrid  "),
