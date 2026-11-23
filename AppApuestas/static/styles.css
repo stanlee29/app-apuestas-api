@@ -373,3 +373,19 @@ h2 { margin: 5px 0 0; font-size: 21px; letter-spacing: -.025em; }
 #nba-research .research-status,#nba-research .research-output{margin-left:14px;margin-right:14px}
 #nba-research .research-output{margin-bottom:12px}
 @media(max-width:700px){#nba-research .pitch-research-controls{grid-template-columns:1fr}#nba-research .pitch-research-controls .research-wide{grid-column:auto}}
+
+
+/* Statcast MLB pitch-location chart: separate coordinate system from NBA / football */
+.mlb-zone{display:block;width:min(100%,470px);height:auto;margin:0 auto;border-radius:8px;overflow:hidden}
+.mlb-zone-bg{fill:#111e2d}
+.mlb-zone-line{fill:none;stroke:#a8b7c8;stroke-width:2;opacity:.8}
+.mlb-pitch-dot{stroke:#0d1724;stroke-width:1.1;opacity:.9}
+.mlb-pitch-dot.strike{fill:#5ddab3}.mlb-pitch-dot.ball{fill:#ffad73}
+.mlb-strike{background:#5ddab3}.mlb-ball{background:#ffad73}
+#pro-sports-research .research-explainer,
+#pro-sports-research .pitch-subcard,
+#pro-sports-research .research-status{margin:0 14px 12px}
+#pro-sports-research .pitch-research-controls{grid-template-columns:repeat(4,minmax(0,1fr));padding:10px 0}
+#pro-sports-research .pitch-research-actions{padding:10px 0}
+#pro-sports-research .research-output{padding:10px 0}
+@media(max-width:700px){#pro-sports-research .pitch-research-controls{grid-template-columns:1fr 1fr}}
