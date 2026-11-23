@@ -58,8 +58,9 @@ class ResearchStorage:
                 "El archivo histórico de AppApuestas ya está preparado. "
                 "Incluye resultados de fútbol y MLB, métricas avanzadas de fútbol, "
                 "resúmenes de cuotas e identidades de equipos/eventos. "
-                "La API lo consulta cuando SUPABASE_URL y SUPABASE_SERVICE_ROLE_KEY "
-                "están configuradas en Render."
+                "La API lo consulta cuando SUPABASE_URL y SUPABASE_SECRET_KEY "
+                "están configuradas en Render; SUPABASE_SERVICE_ROLE_KEY se conserva "
+                "solo como compatibilidad temporal."
             ),
         }
 
