@@ -1,9 +1,18 @@
 import unittest
+import pandas as pd
 
-from nfl_research import play_by_play, schedules, weekly_rosters, statistics, nextgen_stats, pfr_advanced_stats
+from nfl_research import play_by_play, schedules, weekly_rosters, statistics, nextgen_stats, pfr_advanced_stats, _frame_records
 
 
 class NFLResearchTests(unittest.TestCase):
+    def test_frame_records_cleans_nan_and_dates_for_json(self):
+        frame = pd.DataFrame([
+            {"player_name": "Player A", "epa": float("nan"), "week": 1},
+        ])
+        rows = _frame_records(frame, 10)
+        self.assertIsNone(rows[0]["epa"])
+        self.assertEqual(rows[0]["player_name"], "Player A")
+
     def test_rejects_invalid_season(self):
         with self.assertRaises(ValueError):
             schedules(1990)
