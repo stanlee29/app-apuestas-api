@@ -58,6 +58,55 @@ def dataframe_records(frame: Any, limit: int = 500) -> list[dict[str, Any]]:
     ]
 
 
+def normalize_scoreboard_rows(
+    headers: list[dict[str, Any]],
+    line_scores: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Attach home/away team details to each ScoreboardV3 GameHeader row.
+
+    NBA ScoreboardV3 returns GameHeader and LineScore as separate datasets.
+    GameCode suffix is AWAY + HOME three-letter team codes.
+    """
+    lines_by_game: dict[str, list[dict[str, Any]]] = {}
+    for row in line_scores:
+        game_key = str(row.get("gameId") or "")
+        lines_by_game.setdefault(game_key, []).append(row)
+
+    normalized: list[dict[str, Any]] = []
+    for header in headers:
+        game_key = str(header.get("gameId") or "")
+        game_code = str(header.get("gameCode") or "")
+        team_codes = game_code.rsplit("/", 1)[-1]
+        away_code = team_codes[:3].upper() if len(team_codes) >= 6 else ""
+        home_code = team_codes[3:6].upper() if len(team_codes) >= 6 else ""
+        teams = lines_by_game.get(game_key, [])
+        by_code = {
+            str(team.get("teamTricode") or "").upper(): team
+            for team in teams
+        }
+        home_line = by_code.get(home_code) if home_code else None
+        away_line = by_code.get(away_code) if away_code else None
+        game = dict(header)
+        if home_line:
+            game["homeTeam"] = {
+                "teamId": home_line.get("teamId"),
+                "teamName": home_line.get("teamName"),
+                "teamCity": home_line.get("teamCity"),
+                "teamTricode": home_line.get("teamTricode"),
+                "score": home_line.get("score"),
+            }
+        if away_line:
+            game["awayTeam"] = {
+                "teamId": away_line.get("teamId"),
+                "teamName": away_line.get("teamName"),
+                "teamCity": away_line.get("teamCity"),
+                "teamTricode": away_line.get("teamTricode"),
+                "score": away_line.get("score"),
+            }
+        normalized.append(game)
+    return normalized
+
+
 def _cached(key: str, loader):
     now = time.monotonic()
     with _CACHE_LOCK:
@@ -130,47 +179,7 @@ def scoreboard(game_date: str) -> dict[str, Any]:
             lines = dataframe_records(board.line_score.get_data_frame(), 200)
             leaders = dataframe_records(board.game_leaders.get_data_frame(), 100)
 
-            # En ScoreboardV3 los nombres/puntajes vienen en LineScore,
-            # no anidados en GameHeader. gameCode termina con AWAY + HOME tricodes.
-            lines_by_game: dict[str, list[dict[str, Any]]] = {}
-            for row in lines:
-                game_key = str(row.get("gameId") or "")
-                lines_by_game.setdefault(game_key, []).append(row)
-
-            normalized_games: list[dict[str, Any]] = []
-            for header in headers:
-                game_key = str(header.get("gameId") or "")
-                game_code = str(header.get("gameCode") or "")
-                team_codes = game_code.rsplit("/", 1)[-1]
-                away_code = team_codes[:3] if len(team_codes) >= 6 else ""
-                home_code = team_codes[3:6] if len(team_codes) >= 6 else ""
-                game_lines = lines_by_game.get(game_key, [])
-                by_code = {
-                    str(team.get("teamTricode") or "").upper(): team
-                    for team in game_lines
-                }
-                home_line = by_code.get(home_code.upper()) if home_code else None
-                away_line = by_code.get(away_code.upper()) if away_code else None
-                # Fallback de proveedor: si gameCode no es interpretable,
-                # no inventar quién es local/visitante.
-                game = dict(header)
-                if home_line:
-                    game["homeTeam"] = {
-                        "teamId": home_line.get("teamId"),
-                        "teamName": home_line.get("teamName"),
-                        "teamCity": home_line.get("teamCity"),
-                        "teamTricode": home_line.get("teamTricode"),
-                        "score": home_line.get("score"),
-                    }
-                if away_line:
-                    game["awayTeam"] = {
-                        "teamId": away_line.get("teamId"),
-                        "teamName": away_line.get("teamName"),
-                        "teamCity": away_line.get("teamCity"),
-                        "teamTricode": away_line.get("teamTricode"),
-                        "score": away_line.get("score"),
-                    }
-                normalized_games.append(game)
+            normalized_games = normalize_scoreboard_rows(headers, lines)
 
             return {
                 "fuente": "NBA.com Stats",
