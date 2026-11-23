@@ -140,6 +140,10 @@ Endpoints:
 - `GET /api/v1/research/nfl/rosters?season=2026&week=10`
 - `GET /api/v1/research/nfl/injuries?season=2026`
 - `GET /api/v1/research/nfl/depth-charts?season=2026`
+- `GET /api/v1/research/nfl/statistics?season=2026&entity=player&summary_level=week`
+- `GET /api/v1/research/nfl/snap-counts?season=2026`
+- `GET /api/v1/research/nfl/nextgen-stats?season=2026&stat_type=passing`
+- `GET /api/v1/research/nfl/pfr-advanced?season=2026&stat_type=pass&summary_level=week`
 
 El PBP requiere el game_id y limita el número de jugadas devueltas. La cobertura de lesiones, depth charts, snap counts y Next Gen Stats depende de las tablas publicadas en nflverse. El paquete se declara experimental. La mayoría de los datos son CC BY 4.0; FTN charting es CC BY-SA 4.0. Verifica la licencia del dataset concreto antes de redistribuirlo.
 
