@@ -303,7 +303,7 @@ class ResearchStorage:
                 "fecha": row.get("match_date"),
                 "condicion": "local" if is_home else "visitante",
                 "equipo": requested_team,
-                "nombre_en_fuente": home_name if is_home else away_name,
+                "nombre_en_fuente": home_team if is_home else away_team,
                 "rival": away_team if is_home else home_team,
                 "marcador": f"{int(own_score)}-{int(opp_score)}" if own_score is not None and opp_score is not None else None,
                 "resultado": result,
