@@ -81,18 +81,61 @@ Se añadieron mlb_research.py, rutas y panel Statcast: lances individuales, tipo
 
 EasySoccerData no se activa como scraper general de producción: cada web tiene condiciones distintas y endpoints no oficiales pueden cambiar. football-data.co.uk no se incorpora para automatización o entrenamiento de IA sin autorización adicional; que un archivo esté disponible para descargar no concede derechos ilimitados.
 
-## Almacenamiento histórico
+## Archivo histórico Supabase de AppApuestas
 
-Se incorporó un adaptador opcional que guarda snapshots diarios de análisis de PitchAPI y StatsBomb en Supabase Postgres.
+Se reutilizó un proyecto Supabase anterior y se convirtió en el almacén privado de investigación histórica de AppApuestas. El proyecto sigue mostrando temporalmente el nombre antiguo **edgebet-historical**; el nombre y la organización se deben ajustar desde el Dashboard de Supabase.
 
-- Migración: AppApuestas/sql/001_research_snapshots.sql.
-- Estado: GET /api/v1/research/storage/status.
-- Historial: GET /api/v1/research/storage/history/{match_id}?provider=pitchapi.
-- Variables privadas en Render: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY y SUPABASE_RESEARCH_TABLE.
+**Proyecto asignado:** `qqclrmhfudkckadxmbiy` · región `ca-central-1`  
+**Dashboard:** https://supabase.com/dashboard/project/qqclrmhfudkckadxmbiy
 
-**No se ha seleccionado ni modificado ningún proyecto Supabase para AppApuestas.** Para activarlo, hay que elegir el proyecto correcto, aplicar la migración y añadir su service-role key solo en Render. La clave nunca debe estar en la web ni en el APK.
+### Datos conservados
 
-La caché en memoria se pierde al reiniciar o suspender el servicio. La persistencia funciona solo después de habilitar Supabase o instalar el dataset local en un volumen persistente.
+| Conjunto | Registros | Uso |
+|---|---:|---|
+| Resultados de fútbol de Football-Data.co.uk | 64,586 | Marcadores y estadísticas históricas de equipos |
+| Resultados MLB StatsAPI | 14,577 | Historial de partidos de béisbol |
+| Resúmenes de mercados y cuotas | 440,959 | Apertura, cierre, mínimos/máximos, promedios y recuento de observaciones |
+| American Soccer Analysis | 3,351 | xG por equipo y métricas publicadas |
+| StatsBomb Open Data | 32 | xG, remates y referencia avanzada de eventos |
+| Identidades de equipos | 153 | Equivalencias entre nombres e IDs de proveedores, confianza mínima 0.90 |
+| Alias de eventos | 84 | Cruce de identificadores de eventos, confianza mínima 0.90 |
+
+Los 440,959 resúmenes compactan 821,636 observaciones anteriores. Se conservan apertura/cierre y rangos; **no** es un feed tick a tick. 439,169 grupos conservan alguna probabilidad justa. En los demás mercados solo queda la probabilidad implícita; no se inventa una probabilidad justa.
+
+### Tablas privadas
+
+- `historical_matches`: resultados históricos de fútbol y MLB.
+- `historical_match_features`: métricas avanzadas de ASA y StatsBomb, sin payloads JSON originales.
+- `market_odds_summary`: resúmenes compactos de precios de mercado.
+- `team_identity_map` y `event_identity_aliases`: equivalencias de IDs con confianza.
+- `research_snapshots`: snapshots diarios de análisis generados por AppApuestas.
+
+Las seis tablas tienen RLS activo. No hay políticas para `anon` ni `authenticated`; el backend usa `service_role` desde Render. La clave de servicio nunca debe incluirse en el navegador, GitHub ni APK.
+
+### Endpoints nuevos
+
+- Estado del almacenamiento: `GET /api/v1/research/storage/status`.
+- Snapshots por partido: `GET /api/v1/research/storage/history/{match_id}?provider=pitchapi`.
+- Historial anterior de un equipo: `GET /api/v1/research/archive/teams/{team_name}?before_date=YYYY-MM-DD&limit=5`.
+- Resúmenes de cuotas por evento: `GET /api/v1/research/archive/events/{event_id}/markets?limit=50`.
+
+El endpoint de equipo limita los partidos a fechas anteriores al encuentro consultado y separa resultados de métricas avanzadas. Los campos sin cobertura permanecen nulos; el resultado histórico no se presenta como estadística actual.
+
+### Licencias y límites
+
+- American Soccer Analysis: datos CC BY-SA 4.0; conservar atribución y compartir adaptaciones bajo las condiciones aplicables.
+- StatsBomb Open Data: atribuir a StatsBomb y utilizar su logotipo cuando se publiquen análisis derivados, conforme a sus condiciones.
+- Football-Data.co.uk y MLB StatsAPI: se conserva la procedencia; no se debe asumir autorización ilimitada de redistribución o uso comercial solo por disponer de los registros.
+- Se excluyeron predicciones sombra sin calibrar, tablas de calibración de EdgeBet, colas, datos de usuario, payloads de scraping sin valor verificable, Statcast con coordenadas marcadas como no válidas y credenciales antiguas.
+
+### Limpieza y estado operativo
+
+- Se retiraron las tablas SQL y secretos de EdgeBet del proyecto histórico.
+- Se desprogramaron las tareas cron de EdgeBet y se retiraron sus funciones SQL.
+- Quedan cuatro Edge Functions antiguas de EdgeBet desplegadas con JWT desactivado. No se pudieron eliminar desde las herramientas conectadas; deben borrarse manualmente desde **Supabase Dashboard → Edge Functions**.
+- Tamaño de base comprobado tras la limpieza: aproximadamente **231 MB**, por debajo del límite de 500 MB del plan gratuito. Vigilar el crecimiento de snapshots y cuotas.
+
+Variables privadas en Render: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_RESEARCH_TABLE=research_snapshots` y `APP_MODEL_VERSION`. La URL y nombre de tabla pueden configurarse desde Render; para habilitar las consultas falta que se añada la service-role key desde el Dashboard de Render, sin compartirla por chat.
 
 ## Seguridad y estabilidad
 
