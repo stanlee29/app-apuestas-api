@@ -304,6 +304,14 @@ def _response_keys(payload: Any, depth: int = 2) -> list[str]:
     return sorted(keys)[:100]
 
 
+READ_ONLY_HTTP_METHODS = frozenset(("GET", "HEAD", "OPTIONS"))
+
+
+def is_read_only_method(method: str) -> bool:
+    """Return True only for HTTP methods that do not submit or modify a bet."""
+    return str(method or "").upper() in READ_ONLY_HTTP_METHODS
+
+
 def _allowed_data_host(url: str) -> bool:
     host = (urlparse(url).hostname or "").casefold()
     return any(host == suffix or host.endswith("." + suffix) for suffix in ALLOWED_HOST_SUFFIXES)
@@ -343,7 +351,7 @@ async def collect_public_feed(urls: list[str], days: int, wait_seconds: float) -
         async def read_only_guard(route):
             method = route.request.method.upper()
             request_counts[method] += 1
-            if method not in ("GET", "HEAD", "OPTIONS"):
+            if not is_read_only_method(method):
                 blocked_methods[method] += 1
                 await route.abort("blockedbyclient")
                 return
