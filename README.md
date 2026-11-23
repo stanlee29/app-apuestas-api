@@ -6,6 +6,7 @@ Aplicación de consulta e investigación deportiva. El backend FastAPI obtiene e
 
 - Cartelera de fútbol, NBA, NFL y MLB, según las ligas disponibles en la cuenta del proveedor.
 - Mercados y selecciones con precios por casa, cuota americana, conversión decimal, línea y hora de actualización.
+- Observador independiente de la cartelera pública de GanaPlay mediante navegador anónimo y solicitudes de solo lectura; requiere validar la cobertura antes de usarlo como fuente operativa.
 - Selector de fecha exacta para hoy, mañana o pasado mañana en hora de El Salvador; la consulta anterior por rango sigue disponible para compatibilidad.
 - Paginación por cursor de eventos hasta agotar resultados, con un límite configurable que se informa explícitamente cuando se alcanza.
 - Filtro de eventos en vivo.
@@ -52,6 +53,8 @@ Añade \`SPORTSGAMEODDS_API_KEY\` a las variables privadas de Render. No guardes
 | \`GET /equipos/{deporte}\` | Equipos encontrados en históricos |
 | \`GET /predecir\` | Predicción manual con históricos |
 | \`POST /actualizar-datos\` | Actualizar los CSV de resultados históricos |
+
+El recolector experimental de GanaPlay se ejecuta aparte desde AppApuestas/ganaplay_public_feed.py. Su workflow de GitHub Actions genera un artefacto de diagnóstico. Aún no está unido a la cartelera web ni guarda datos en Supabase hasta que se valide la respuesta pública observada.
 
 ### Archivo histórico de investigación
 
