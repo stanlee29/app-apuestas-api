@@ -1,0 +1,18 @@
+# Paquetes experimentales y de análisis offline.
+# No se instalan en el servicio Render de producción por defecto.
+# Instalar solo en el entorno de investigación que necesite cada fuente.
+
+# NFL: play-by-play, schedules, rosters, lesiones, snap counts y Next Gen Stats.
+nflreadpy
+
+# MLB: Statcast y estadísticas históricas. Revisar por separado los términos
+# de Baseball Savant, FanGraphs y Baseball Reference antes de automatizar.
+pybaseball
+
+# Visualización y análisis avanzado de eventos de fútbol offline.
+mplsoccer
+kloppy
+socceraction
+
+# Lectura de datasets Parquet históricos (incluidos conjuntos de resultados).
+pyarrow
