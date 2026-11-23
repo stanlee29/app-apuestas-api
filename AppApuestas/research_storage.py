@@ -6,6 +6,7 @@ en el servidor. No hace llamadas a Supabase al importar el módulo.
 from __future__ import annotations
 
 import os
+import re
 from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import urlparse
@@ -29,7 +30,8 @@ class ResearchStorage:
         if not self.url or not self.key:
             return False
         parsed = urlparse(self.url)
-        return parsed.scheme == "https" and bool(parsed.netloc)
+        valid_table = bool(re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", self.table))
+        return parsed.scheme == "https" and bool(parsed.netloc) and valid_table
 
     def status(self) -> dict[str, Any]:
         return {
