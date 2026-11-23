@@ -183,7 +183,7 @@ La aplicación incluye un adaptador REST que guarda snapshots diarios de anális
 2. En Render agrega `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` y, opcionalmente, `SUPABASE_RESEARCH_TABLE`.
 3. Nunca pongas la service-role key en Flutter, HTML, JavaScript o GitHub.
 4. Comprueba `GET /api/v1/research/storage/status`.
-5. Los análisis de PitchAPI guardan un snapshot diario al consultar el partido. Para consultar el historial usa `GET /api/v1/research/storage/history/{match_id}?provider=pitchapi`.
+5. Los análisis de PitchAPI guardan un snapshot diario al consultar el partido. El panel Research indica si se guardó y ofrece un botón para consultar snapshots anteriores. Para usarlo por API, consulta `GET /api/v1/research/storage/history/{match_id}?provider=pitchapi`.
 
 No se seleccionó ni modificó ninguna base Supabase existente. Hay que elegir explícitamente la base de AppApuestas antes de activar las variables. El adaptador no rompe la respuesta de análisis si el storage no está configurado o falla temporalmente.
 
