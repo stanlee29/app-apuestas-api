@@ -436,6 +436,29 @@ def research_odds_history(
     }
 
 
+@app.get("/api/v1/research/odds/teams/{home_team}/{away_team}", tags=["Historial"])
+def research_odds_by_teams(
+    home_team: str,
+    away_team: str,
+    match_date: date = Query(..., description="Fecha UTC del partido YYYY-MM-DD"),
+    limit: int = Query(default=1, ge=1, le=5),
+):
+    storage = ResearchStorage()
+    if not storage.configured:
+        raise HTTPException(status_code=503, detail="Supabase no está configurado para AppApuestas.")
+    try:
+        return storage.odds_snapshots_for_teams(
+            home_team,
+            away_team,
+            match_date=match_date.isoformat(),
+            limit=limit,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except ResearchStorageError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
 @app.get("/api/v1/research/storage/history/{match_id}", tags=["Historial"])
 def research_storage_history(
     match_id: str,
