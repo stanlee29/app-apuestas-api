@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 import requests
@@ -243,44 +243,100 @@ class SportsGameOddsClient:
         self.last_usage: dict[str, str | None] = {
             "remaining": None, "used": None, "last": None,
         }
+        self.last_page_count = 0
+        self.pagination_complete = True
+        self.next_cursor: str | None = None
 
     def _get_events(self, params: dict[str, Any]) -> list[dict[str, Any]]:
+        """Consulta todas las páginas disponibles usando nextCursor sin alterar filtros."""
         try:
-            response = self.session.get(
-                f"{self.settings.base_url}/events",
-                params=params,
-                timeout=self.settings.timeout_seconds,
-            )
-        except requests.RequestException as exc:
-            raise ProviderAccessError(f"No fue posible conectar con SportsGameOdds: {exc}") from exc
-
-        self.last_usage = {
-            "remaining": response.headers.get("x-requests-remaining"),
-            "used": response.headers.get("x-requests-used"),
-            "last": response.headers.get("x-requests-last"),
-        }
-        if response.status_code == 429:
-            raise ProviderAccessError(
-                "SportsGameOdds respondió HTTP 429: se alcanzó el límite de consultas o de objetos del plan."
-            )
-        if response.status_code in (401, 403):
-            raise ProviderAccessError(
-                f"SportsGameOdds rechazó la clave (HTTP {response.status_code}). Verifica la variable privada."
-            )
-        try:
-            response.raise_for_status()
-            payload = response.json()
-        except (requests.HTTPError, ValueError) as exc:
-            raise ProviderResponseError(
-                f"Respuesta no válida de SportsGameOdds (HTTP {response.status_code})."
+            max_pages = int(os.getenv("SPORTSGAMEODDS_MAX_EVENT_PAGES", "10"))
+        except ValueError as exc:
+            raise ProviderConfigurationError(
+                "SPORTSGAMEODDS_MAX_EVENT_PAGES debe ser un entero."
             ) from exc
+        if not 1 <= max_pages <= 50:
+            raise ProviderConfigurationError(
+                "SPORTSGAMEODDS_MAX_EVENT_PAGES debe estar entre 1 y 50."
+            )
 
-        if not isinstance(payload, dict) or payload.get("success") is False:
-            raise ProviderResponseError("SportsGameOdds devolvió una respuesta sin éxito.")
-        data = payload.get("data")
-        if not isinstance(data, list):
-            raise ProviderResponseError("La respuesta de SportsGameOdds no contiene una lista 'data'.")
-        return [item for item in data if isinstance(item, dict)]
+        all_events: list[dict[str, Any]] = []
+        cursor: str | None = None
+        seen_cursors: set[str] = set()
+        self.last_page_count = 0
+        self.pagination_complete = True
+        self.next_cursor = None
+
+        for page_index in range(max_pages):
+            page_params = dict(params)
+            if cursor:
+                page_params["cursor"] = cursor
+            try:
+                response = self.session.get(
+                    f"{self.settings.base_url}/events",
+                    params=page_params,
+                    timeout=self.settings.timeout_seconds,
+                )
+            except requests.RequestException as exc:
+                raise ProviderAccessError(
+                    f"No fue posible conectar con SportsGameOdds: {exc}"
+                ) from exc
+
+            self.last_usage = {
+                "remaining": response.headers.get("x-requests-remaining"),
+                "used": response.headers.get("x-requests-used"),
+                "last": response.headers.get("x-requests-last"),
+            }
+            if response.status_code == 429:
+                raise ProviderAccessError(
+                    "SportsGameOdds respondió HTTP 429: se alcanzó el límite de consultas o de objetos del plan."
+                )
+            if response.status_code in (401, 403):
+                raise ProviderAccessError(
+                    f"SportsGameOdds rechazó la clave (HTTP {response.status_code}). Verifica la variable privada."
+                )
+            try:
+                response.raise_for_status()
+                payload = response.json()
+            except (requests.HTTPError, ValueError) as exc:
+                raise ProviderResponseError(
+                    f"Respuesta no válida de SportsGameOdds (HTTP {response.status_code})."
+                ) from exc
+
+            if not isinstance(payload, dict) or payload.get("success") is False:
+                raise ProviderResponseError("SportsGameOdds devolvió una respuesta sin éxito.")
+            data = payload.get("data")
+            if not isinstance(data, list):
+                raise ProviderResponseError(
+                    "La respuesta de SportsGameOdds no contiene una lista 'data'."
+                )
+
+            self.last_page_count += 1
+            page_events = [item for item in data if isinstance(item, dict)]
+            all_events.extend(page_events)
+
+            next_cursor = payload.get("nextCursor")
+            # La guía del proveedor indica que un cursor con página vacía
+            # puede marcar el final real del conjunto.
+            if not page_events or next_cursor in (None, ""):
+                self.next_cursor = None
+                break
+            if not isinstance(next_cursor, str):
+                raise ProviderResponseError(
+                    "SportsGameOdds devolvió un nextCursor con formato no válido."
+                )
+            if next_cursor in seen_cursors:
+                raise ProviderResponseError(
+                    "SportsGameOdds repitió un cursor; se detuvo la paginación para evitar un bucle."
+                )
+
+            seen_cursors.add(next_cursor)
+            cursor = next_cursor
+            self.next_cursor = cursor
+            if page_index == max_pages - 1:
+                self.pagination_complete = False
+
+        return all_events
 
     def account_usage(self) -> dict[str, Any]:
         """Devuelve uso y límites reales de esta API key sin exponer sus identificadores."""
@@ -322,6 +378,7 @@ class SportsGameOddsClient:
         days: int = 2,
         live: bool | None = None,
         limit: int = 100,
+        match_date: date | str | None = None,
     ) -> dict[str, Any]:
         sport = sport.casefold().strip()
         if not isinstance(limit, int) or not 1 <= limit <= 100:
@@ -329,7 +386,10 @@ class SportsGameOddsClient:
         if sport not in SPORT_LEAGUES:
             raise ProviderConfigurationError(f"Deporte no admitido: {sport}")
         league_ids = (self.settings.leagues or SPORT_LEAGUES)[sport]
-        window = calendar_window(days)
+        try:
+            window = calendar_day_window(match_date) if match_date is not None else calendar_window(days)
+        except ValueError as exc:
+            raise ProviderConfigurationError(f"Fecha de cartelera no válida: {exc}") from exc
         params: dict[str, Any] = {
             "leagueID": ",".join(league_ids),
             "startsAfter": window["starts_after"],
@@ -344,8 +404,15 @@ class SportsGameOddsClient:
             params["live"] = str(live).lower()
 
         raw_events = self._get_events(params)
-        events = [normalize_event(item) for item in raw_events]
-        events = [item for item in events if item["evento_id"] and not item["cancelado"]]
+        # Algunos eventos pueden moverse mientras se recorren varias páginas.
+        # Deduplicar por eventID evita repetir tarjetas en esa situación.
+        normalized: dict[str, dict[str, Any]] = {}
+        for raw_event in raw_events:
+            event = normalize_event(raw_event)
+            event_id = str(event.get("evento_id") or "")
+            if event_id and not event["cancelado"]:
+                normalized[event_id] = event
+        events = list(normalized.values())
         events.sort(key=lambda item: (item.get("fecha_hora") or "", item.get("liga") or ""))
         return {
             "fuente": "SportsGameOdds",
@@ -358,6 +425,8 @@ class SportsGameOddsClient:
             "eventos": events,
             "uso": dict(self.last_usage),
             "ventana_consulta": window,
+            "paginas_consultadas": self.last_page_count,
+            "paginacion_completa": self.pagination_complete,
         }
 
     def get_event(self, event_id: str) -> dict[str, Any]:
@@ -414,6 +483,40 @@ def calendar_window(days: int, now_utc: datetime | None = None) -> dict[str, Any
         "starts_before": iso_z(end_utc),
     }
 
+
+
+def calendar_day_window(match_date: date | str, now_utc: datetime | None = None) -> dict[str, Any]:
+    """Construye los límites UTC de una fecha civil exacta en El Salvador."""
+    selected_date = date.fromisoformat(match_date) if isinstance(match_date, str) else match_date
+    if not isinstance(selected_date, date):
+        raise ValueError("La fecha debe usar el formato YYYY-MM-DD.")
+
+    current = now_utc or datetime.now(timezone.utc)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=timezone.utc)
+    current = current.astimezone(timezone.utc)
+
+    today_local = current.astimezone(EL_SALVADOR_TZ).date()
+    start_local = datetime.combine(selected_date, datetime.min.time(), tzinfo=EL_SALVADOR_TZ)
+    end_local = start_local + timedelta(days=1)
+    start_utc = start_local.astimezone(timezone.utc)
+
+    # Para hoy se conservan encuentros en vivo o recién iniciados;
+    # para fechas futuras el filtro comienza exactamente a medianoche local.
+    if selected_date == today_local:
+        start_utc = max(start_utc, current - timedelta(hours=6))
+
+    def iso_z(value: datetime) -> str:
+        return value.astimezone(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+    return {
+        "fecha_inicio_local": selected_date.isoformat(),
+        "fecha_fin_local": selected_date.isoformat(),
+        "dias_incluidos": 1,
+        "zona_horaria": "America/El_Salvador",
+        "starts_after": iso_z(start_utc),
+        "starts_before": iso_z(end_local.astimezone(timezone.utc)),
+    }
 
 def provider_status() -> dict[str, Any]:
     leagues = {}
