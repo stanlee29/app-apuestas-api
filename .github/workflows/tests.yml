@@ -1,3 +1,4 @@
+# Temporary probe: verify that GitHub assigns a hosted runner to this workflow.
 name: Validate AppApuestas
 
 on:
