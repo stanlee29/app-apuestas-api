@@ -72,7 +72,7 @@ class ResearchStorage:
     def _get_rows(self, table: str, params: dict[str, str], context: str) -> list[dict[str, Any]]:
         if not self.configured:
             raise ResearchStorageError("Supabase no está configurado para AppApuestas.")
-        if table not in self.ARCHIVE_TABLES:
+        if table not in self.ARCHIVE_TABLES and table != self.table:
             raise ValueError("Tabla de archivo no permitida.")
         try:
             response = requests.get(
