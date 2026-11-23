@@ -409,6 +409,21 @@ class ResearchStorage:
             if canonical and canonical not in event_ids:
                 event_ids.append(str(canonical))
 
+        reverse_aliases = self._get_rows(
+            "event_identity_aliases",
+            {
+                "select": "alias_event_id",
+                "canonical_event_id": "eq." + selected_id,
+                "confidence": "gte.0.90",
+                "limit": "10",
+            },
+            "los alias de eventos vinculados",
+        )
+        for alias in reverse_aliases:
+            alias_id = alias.get("alias_event_id")
+            if alias_id and str(alias_id) not in event_ids:
+                event_ids.append(str(alias_id))
+
         markets: list[dict[str, Any]] = []
         for selected in event_ids:
             rows = self._get_rows(
