@@ -152,6 +152,19 @@ class PitchAPITests(unittest.TestCase):
             self.assertIsNone(client._get("/matches/m_B8x2K9/advanced", optional=True))
         mocked.assert_called_once()
 
+    def test_cache_reciente_se_sirve_durante_pausa_429(self):
+        client = PitchAPIClient(api_key="test-key")
+        cache_key = "/leagues" + repr(())
+        with patch.object(integraciones_pitchapi, "_RATE_LIMIT_UNTIL", 0.0):
+            integraciones_pitchapi._CACHE[cache_key] = (
+                integraciones_pitchapi.time.monotonic(),
+                {"leagues": [{"id": "l_123456", "name": "Cached League"}]},
+            )
+            with patch.object(client.session, "get") as mocked:
+                result = client._get("/leagues")
+            mocked.assert_not_called()
+            self.assertEqual(result["leagues"][0]["name"], "Cached League")
+
     def test_429_se_convierte_en_pausa_local(self):
         client = PitchAPIClient(api_key="test-key")
         response = SimpleNamespace(status_code=429, headers={"Retry-After": "30"}, reason="Too Many Requests")
