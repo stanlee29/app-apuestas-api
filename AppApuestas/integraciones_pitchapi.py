@@ -116,11 +116,17 @@ class PitchAPIClient:
         except requests.RequestException as exc:
             raise PitchAPIError(f"No fue posible conectar con PitchAPI: {exc}") from exc
 
-        if response.status_code == 404 and optional:
-            # 404 opcional incluye ANALYTICS_UNAVAILABLE: el partido existe,
-            # pero no dispone de feed avanzado. Se guarda para evitar reintentos.
-            _cache_write(cache_key, None, now, ttl)
-            return None
+        if response.status_code == 404:
+            if optional:
+                # 404 opcional incluye ANALYTICS_UNAVAILABLE: el partido existe,
+                # pero no dispone de feed avanzado. Se guarda para evitar reintentos.
+                _cache_write(cache_key, None, now, ttl)
+                return None
+            raise PitchAPIError(
+                "PitchAPI no encontró el partido solicitado.",
+                status_code=404,
+                code="PITCHAPI_NOT_FOUND",
+            )
         if response.status_code == 401:
             raise PitchAPIError(
                 "PitchAPI rechazó la clave. Revisa PITCHAPI_API_KEY en Render.",
