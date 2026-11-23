@@ -1,0 +1,59 @@
+name: Probe GanaPlay public feed (read-only)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "AppApuestas/ganaplay_public_feed.py"
+      - "AppApuestas/requirements-scraper.txt"
+      - "AppApuestas/tests/test_ganaplay_public_feed.py"
+      - ".github/workflows/ganaplay-public-feed.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ganaplay-public-feed-\${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  capture:
+    name: Capture public GanaPlay JSON responses
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    defaults:
+      run:
+        working-directory: AppApuestas
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: AppApuestas/requirements-scraper.txt
+
+      - name: Install read-only scraper
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-scraper.txt
+
+      - name: Install Chromium
+        run: python -m playwright install --with-deps chromium
+
+      - name: Run public feed probe
+        run: |
+          mkdir -p artifacts
+          python ganaplay_public_feed.py --days 2 --wait 15 --output artifacts/ganaplay_public_feed.json
+
+      - name: Upload diagnostic JSON
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ganaplay-public-feed-probe
+          path: AppApuestas/artifacts/ganaplay_public_feed.json
+          if-no-files-found: warn
+          retention-days: 3
