@@ -40,6 +40,7 @@ from nfl_research import (
     injuries as nfl_injuries, depth_charts as nfl_depth_charts,
 )
 from mlb_research import MLBResearchError, mlb_status, statcast as mlb_statcast
+from research_storage import ResearchStorage, ResearchStorageError
 
 BASE_DIR = Path(__file__).resolve().parent
 DATOS_DIR = BASE_DIR / "datos"
@@ -341,13 +342,47 @@ def research_football_league_matches(
 @app.get("/api/v1/research/football/matches/{match_id}/analysis", tags=["Investigación"])
 def research_football_match_analysis(match_id: str):
     try:
-        return PitchAPIClient().match_analysis(match_id)
+        result = PitchAPIClient().match_analysis(match_id)
+        storage = ResearchStorage()
+        try:
+            result["persistencia"] = storage.save_snapshot(
+                provider="pitchapi",
+                match_id=match_id,
+                snapshot_type="match_analysis",
+                payload=result,
+                source_timestamp=result.get("consultado_en"),
+            )
+        except (ResearchStorageError, ValueError):
+            # El análisis siempre puede mostrarse aunque el almacenamiento esté desactivado.
+            result["persistencia"] = {"guardado": False, "motivo": "STORAGE_UNAVAILABLE"}
+        return result
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except PitchAPIError as exc:
         raise HTTPException(status_code=exc.status_code, detail={
             "codigo": exc.code, "mensaje": str(exc)
         }) from exc
+
+
+@app.get("/api/v1/research/storage/status", tags=["Historial"])
+def research_storage_status():
+    return ResearchStorage().status()
+
+
+@app.get("/api/v1/research/storage/history/{match_id}", tags=["Historial"])
+def research_storage_history(
+    match_id: str,
+    provider: str = Query(default="pitchapi", pattern="^(pitchapi|statsbomb)$"),
+    limit: int = Query(default=30, ge=1, le=100),
+):
+    storage = ResearchStorage()
+    if not storage.configured:
+        raise HTTPException(status_code=503, detail="Supabase no está configurado para AppApuestas.")
+    try:
+        rows = storage.history(provider, match_id, limit=limit)
+    except ResearchStorageError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {"provider": provider, "match_id": match_id, "total_snapshots": len(rows), "historial": rows}
 
 
 @app.get("/api/v1/research/football/matches/{match_id}/live", tags=["Investigación"])
