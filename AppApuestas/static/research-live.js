@@ -556,6 +556,43 @@
       '<small class="pitch-data-note">Precios históricos compactados. La probabilidad justa solo aparece cuando la fuente la guardó; no se calcula ni completa de forma artificial.</small>';
   }
 
+  function renderDailyOddsSnapshot(data) {
+    const snapshots = Array.isArray(data && data.snapshots) ? data.snapshots : [];
+    if (!snapshots.length) return "";
+    const snapshot = snapshots[0];
+    const markets = Array.isArray(snapshot.mercados) ? snapshot.mercados : [];
+    const rows = markets.flatMap(market => {
+      const selections = Array.isArray(market.selecciones) ? market.selecciones : [];
+      return selections.map(selection => {
+        const best = selection && selection.mejor_cuota || {};
+        return {
+          market: market && market.nombre || "Mercado",
+          line: market && market.linea,
+          selection: selection && selection.nombre || selection && selection.lado || "Selección",
+          bookmaker: best.casa || "—",
+          decimal: best.cuota_decimal,
+          american: best.cuota_americana,
+          fair: selection && selection.cuota_justa_americana,
+          updated: best.actualizado_en || ""
+        };
+      });
+    }).filter(row => row.decimal != null || row.fair != null).slice(0, 30);
+    const number = value => value == null || value === "" ? "—" : Number(value).toFixed(2);
+    const price = value => value == null || value === "" ? "—" : String(value);
+    const body = rows.length ? rows.map(row =>
+      '<tr><td>' + esc(row.market + (row.line == null ? "" : " " + row.line)) + '</td>' +
+      '<td>' + esc(row.selection) + '</td><td>' + esc(row.bookmaker) + '</td>' +
+      '<td>' + number(row.decimal) + '</td><td>' + esc(price(row.american)) + '</td>' +
+      '<td>' + esc(price(row.fair)) + '</td><td>' + esc(row.updated ? new Date(row.updated).toLocaleString("es-SV") : "—") + '</td></tr>'
+    ).join("") : '<tr><td colspan="7">No se encontraron selecciones con cuotas publicadas en este snapshot.</td></tr>';
+    return '<section class="pitch-subcard"><h4>Snapshot diario · SportsGameOdds</h4>' +
+      '<div class="pitch-form-kpis"><span><b>' + esc(snapshot.mercados_disponibles ?? markets.length) + '</b><small>Mercados publicados</small></span>' +
+      '<span><b>' + esc(snapshot.liga || "—") + '</b><small>Competición</small></span>' +
+      '<span><b>' + esc(snapshot.snapshot_date || "—") + '</b><small>Fecha de captura</small></span></div>' +
+      '<div class="research-table-scroll"><table class="research-table"><thead><tr><th>Mercado</th><th>Selección</th><th>Mejor casa</th><th>Cuota decimal</th><th>Americana</th><th>Cuota justa (Amer.)</th><th>Actualizada</th></tr></thead><tbody>' + body + '</tbody></table></div>' +
+      '<small class="pitch-data-note">Se muestran hasta 30 selecciones del snapshot guardado; no representa una cuota garantizada en vivo. La cuota justa es el dato entregado por SportsGameOdds, no una predicción propia.</small></section>';
+  }
+
   async function loadArchiveMarkets(match) {
     const button = $("pitch-market-archive-load");
     const output = $("pitch-market-archive-output");
@@ -570,10 +607,29 @@
     button.textContent = "Consultando cuotas…";
     output.innerHTML = '<div class="pitch-empty">Buscando apertura, cierre y movimientos resumidos…</div>';
     try {
-      const data = await get("/api/v1/research/archive/events/" + encodeURIComponent(eventId) + "/markets?limit=50");
-      output.innerHTML = renderArchiveMarketRows(data);
-      if (data && data.event_ids_consultados && data.event_ids_consultados.length > 1) {
-        output.innerHTML += '<small class="pitch-data-note">IDs relacionados consultados: ' + esc(data.event_ids_consultados.join(", ")) + '</small>';
+      const home = String(match && match.home_team && match.home_team.name || "").trim();
+      const away = String(match && match.away_team && match.away_team.name || "").trim();
+      const matchDate = String(match && (match.time_utc || match.date) || "").slice(0, 10);
+      let dailySnapshot = null;
+      if (home && away && /^\\d{4}-\\d{2}-\\d{2}$/.test(matchDate)) {
+        try {
+          dailySnapshot = await get(
+            "/api/v1/research/odds/teams/" + encodeURIComponent(home) + "/" +
+            encodeURIComponent(away) + "?match_date=" + encodeURIComponent(matchDate)
+          );
+        } catch (_) { dailySnapshot = null; }
+      }
+      if (dailySnapshot && dailySnapshot.total_snapshots > 0) {
+        output.innerHTML = renderDailyOddsSnapshot(dailySnapshot);
+      } else {
+        const data = await get("/api/v1/research/archive/events/" + encodeURIComponent(eventId) + "/markets?limit=50");
+        output.innerHTML = renderArchiveMarketRows(data);
+        if (data && data.event_ids_consultados && data.event_ids_consultados.length > 1) {
+          output.innerHTML += '<small class="pitch-data-note">IDs relacionados consultados: ' + esc(data.event_ids_consultados.join(", ")) + '</small>';
+        }
+        if (!data || !Array.isArray(data.mercados) || data.mercados.length === 0) {
+          output.innerHTML += '<small class="pitch-data-note">No existe todavía un snapshot diario de SportsGameOdds para este cruce y fecha.</small>';
+        }
       }
     } catch (error) {
       output.innerHTML = '<div class="pitch-empty">No se pudo consultar el histórico de cuotas: ' + esc(error && error.message || "error de conexión") + '. Verifica SUPABASE_SECRET_KEY en Render.</div>';
