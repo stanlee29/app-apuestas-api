@@ -123,7 +123,14 @@ class ResearchStorageTests(unittest.TestCase):
 
     def test_daily_odds_snapshot_matches_exact_teams_and_date(self):
         storage = self._storage()
-        snapshots = [{
+        metadata = [{
+            "match_id": "event-1",
+            "snapshot_date": "2026-11-23",
+            "home_name": "Como",
+            "away_name": "AEK Athens",
+            "kickoff": "2026-11-26T01:00:00.000Z",
+        }]
+        full_snapshot = [{
             "provider": "sportsgameodds",
             "match_id": "event-1",
             "snapshot_date": "2026-11-23",
@@ -136,13 +143,27 @@ class ResearchStorageTests(unittest.TestCase):
                 "mercados_disponibles": 1,
             },
         }]
-        with patch.object(storage, "_get_rows", return_value=snapshots) as get_rows:
+        with patch.object(storage, "_get_rows", side_effect=[metadata, full_snapshot]) as get_rows:
             data = storage.odds_snapshots_for_teams("Como", "AEK Athens", "2026-11-26")
         self.assertEqual(data["total_snapshots"], 1)
         self.assertEqual(data["snapshots"][0]["match_id"], "event-1")
-        params = get_rows.call_args.args[1]
-        self.assertEqual(params["provider"], "eq.sportsgameodds")
-        self.assertEqual(params["payload->>fecha_hora"], "like.2026-11-26*")
+        self.assertEqual(get_rows.call_count, 2)
+        self.assertIn("home_name:payload->>local", get_rows.call_args_list[0].args[1]["select"])
+        self.assertEqual(get_rows.call_args_list[1].args[1]["match_id"], "eq.event-1")
+
+    def test_daily_odds_snapshot_rejects_wrong_team_pair(self):
+        storage = self._storage()
+        metadata = [{
+            "match_id": "event-1",
+            "snapshot_date": "2026-11-23",
+            "home_name": "Como",
+            "away_name": "LASK",
+            "kickoff": "2026-11-26T01:00:00.000Z",
+        }]
+        with patch.object(storage, "_get_rows", return_value=metadata) as get_rows:
+            data = storage.odds_snapshots_for_teams("Como", "AEK Athens", "2026-11-26")
+        self.assertEqual(data["total_snapshots"], 0)
+        self.assertEqual(get_rows.call_count, 1)
 
     def test_daily_odds_snapshot_rejects_wrong_team_pair(self):
         storage = self._storage()
