@@ -198,6 +198,8 @@ class ResearchStorage:
         requested_team = " ".join(str(team_name or "").split())
         if not requested_team:
             raise ValueError("Nombre de equipo inválido.")
+        # Validate and escape the requested value before using it in identity filters.
+        self._team_or_filter(requested_team)
         safe_limit = max(1, min(20, int(limit)))
         cutoff = date.fromisoformat(before_date).isoformat() if before_date else date.today().isoformat()
 
@@ -209,10 +211,10 @@ class ResearchStorage:
                 "select": "provider,provider_team_id,canonical_team_name,provider_team_name,confidence",
                 "or": (
                     "(canonical_team_name.eq." + '"' + requested_team + '"' +
-                    ",provider_team_name.eq." + '"' + requested_team + '"' + ")"
+                    ",provider_team_name.eq." + '"' + requested_team.replace("\\", "\\\\").replace('"', '\\"') + '"' + ")"
                 ),
                 "confidence": "gte.0.90",
-                "limit": "8",
+                "limit": "4",
             },
             "el mapa de identidades de equipos",
         )
@@ -221,6 +223,7 @@ class ResearchStorage:
             for candidate in (identity.get("canonical_team_name"), identity.get("provider_team_name")):
                 if candidate and str(candidate).casefold() not in {item.casefold() for item in candidates}:
                     candidates.append(str(candidate))
+        candidates = candidates[:8]
         team_filter = self._team_or_filter(candidates)
 
         result_params = {
@@ -257,10 +260,17 @@ class ResearchStorage:
         goals_against: list[float] = []
         shots_for: list[float] = []
         shots_against: list[float] = []
+        matched_names = {candidate.casefold() for candidate in candidates}
         for row in result_rows:
             home_team = str(row.get("home_team") or "")
             away_team = str(row.get("away_team") or "")
-            is_home = home_team.casefold() == team_name.strip().casefold()
+            is_home = home_team.casefold() in matched_names
+            is_away = away_team.casefold() in matched_names
+            if not is_home and not is_away:
+                continue
+            if is_home and is_away:
+                # Ambiguous same-name fixture: do not assign arbitrary venue stats.
+                continue
             own_score = self._number(row.get("home_goals" if is_home else "away_goals"))
             opp_score = self._number(row.get("away_goals" if is_home else "home_goals"))
             stats = row.get("stats") if isinstance(row.get("stats"), dict) else {}
