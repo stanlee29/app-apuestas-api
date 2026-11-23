@@ -282,13 +282,50 @@ class SportsGameOddsClient:
             raise ProviderResponseError("La respuesta de SportsGameOdds no contiene una lista 'data'.")
         return [item for item in data if isinstance(item, dict)]
 
+    def account_usage(self) -> dict[str, Any]:
+        """Devuelve uso y límites reales de esta API key sin exponer sus identificadores."""
+        try:
+            response = self.session.get(
+                f"{self.settings.base_url}/account/usage",
+                timeout=self.settings.timeout_seconds,
+            )
+        except requests.RequestException as exc:
+            raise ProviderAccessError("No fue posible consultar el consumo de SportsGameOdds.") from exc
+
+        if response.status_code in (401, 403):
+            raise ProviderAccessError(
+                f"SportsGameOdds rechazó la clave al consultar el uso (HTTP {response.status_code})."
+            )
+        try:
+            response.raise_for_status()
+            payload = response.json()
+        except (requests.HTTPError, ValueError) as exc:
+            raise ProviderResponseError(
+                f"Respuesta no válida de uso de SportsGameOdds (HTTP {response.status_code})."
+            ) from exc
+
+        if not isinstance(payload, dict) or payload.get("success") is not True:
+            raise ProviderResponseError("SportsGameOdds no devolvió datos válidos de uso.")
+        data = payload.get("data")
+        if not isinstance(data, dict) or not isinstance(data.get("rateLimits"), dict):
+            raise ProviderResponseError("La respuesta de uso no contiene rateLimits.")
+        # Nunca devolver keyID, customerID ni email al resto de la aplicación.
+        return {
+            "tier": data.get("tier"),
+            "is_active": data.get("isActive"),
+            "rate_limits": data.get("rateLimits"),
+        }
+
     def get_events(
         self,
         sport: str,
         days: int = 2,
         live: bool | None = None,
+        limit: int = 100,
     ) -> dict[str, Any]:
         sport = sport.casefold().strip()
+        if not isinstance(limit, int) or not 1 <= limit <= 100:
+            raise ProviderConfigurationError("El límite de eventos debe estar entre 1 y 100.")
         if sport not in SPORT_LEAGUES:
             raise ProviderConfigurationError(f"Deporte no admitido: {sport}")
         league_ids = (self.settings.leagues or SPORT_LEAGUES)[sport]
@@ -301,7 +338,7 @@ class SportsGameOddsClient:
             # programados que todavía no tienen cuotas publicadas.
             "finalized": "false",
             "cancelled": "false",
-            "limit": 100,
+            "limit": limit,
         }
         if live is not None:
             params["live"] = str(live).lower()
