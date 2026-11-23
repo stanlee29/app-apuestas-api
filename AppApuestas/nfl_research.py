@@ -94,7 +94,10 @@ def nfl_status() -> dict[str, Any]:
             "estadísticas por jugador y equipo",
             "rosters por semana",
             "lesiones y depth charts",
-            "snap counts y Next Gen Stats",
+            "estadísticas por jugador y equipo",
+            "snap counts",
+            "Next Gen Stats: passing, receiving y rushing",
+            "Pro Football Reference advanced stats",
         ],
         "licencia_datos": "La mayoría de nflverse CC BY 4.0; FTN charting CC BY-SA 4.0.",
         "advertencia": "nflreadpy se declara experimental; revisar frescura y licencia por dataset.",
@@ -180,6 +183,87 @@ def weekly_rosters(season: int, week: int | None = None, limit: int = 1500) -> d
             "cache_segundos": _CACHE_TTL,
         }
     return _cached(f"rosters:{season}:{week}:{limit}", load)
+
+
+def statistics(
+    season: int,
+    entity: str = "player",
+    summary_level: str = "week",
+    limit: int = 2000,
+) -> dict[str, Any]:
+    _validate_season(season)
+    if entity not in {"player", "team"}:
+        raise ValueError("entity debe ser player o team.")
+    if summary_level not in {"week", "reg", "post", "reg+post"}:
+        raise ValueError("summary_level no válido.")
+    limit = max(1, min(10000, int(limit)))
+
+    def load():
+        import nflreadpy as nfl
+        loader = nfl.load_player_stats if entity == "player" else nfl.load_team_stats
+        frame = loader(seasons=season, summary_level=summary_level)
+        rows = _frame_records(frame, limit)
+        return {
+            "fuente": "nflverse",
+            "season": season,
+            "entity": entity,
+            "summary_level": summary_level,
+            "total_registros": len(rows),
+            "estadisticas": rows,
+            "cache_segundos": _CACHE_TTL,
+        }
+    return _cached(f"stats:{season}:{entity}:{summary_level}:{limit}", load)
+
+
+def snap_counts(season: int, limit: int = 2000) -> dict[str, Any]:
+    if not 2012 <= season <= 2100:
+        raise ValueError("season debe estar entre 2012 y 2100 para snap counts.")
+    limit = max(1, min(10000, int(limit)))
+    def load():
+        import nflreadpy as nfl
+        frame = nfl.load_snap_counts(seasons=season)
+        rows = _frame_records(frame, limit)
+        return {"fuente": "nflverse / Pro Football Reference", "season": season,
+                "total_registros": len(rows), "snap_counts": rows, "cache_segundos": _CACHE_TTL}
+    return _cached(f"snap-counts:{season}:{limit}", load)
+
+
+def nextgen_stats(season: int, stat_type: str = "passing", limit: int = 2000) -> dict[str, Any]:
+    if not 2016 <= season <= 2100:
+        raise ValueError("season debe estar entre 2016 y 2100 para Next Gen Stats.")
+    if stat_type not in {"passing", "receiving", "rushing"}:
+        raise ValueError("stat_type debe ser passing, receiving o rushing.")
+    limit = max(1, min(10000, int(limit)))
+    def load():
+        import nflreadpy as nfl
+        frame = nfl.load_nextgen_stats(seasons=season, stat_type=stat_type)
+        rows = _frame_records(frame, limit)
+        return {"fuente": "nflverse Next Gen Stats", "season": season, "stat_type": stat_type,
+                "total_registros": len(rows), "estadisticas": rows, "cache_segundos": _CACHE_TTL}
+    return _cached(f"nextgen:{season}:{stat_type}:{limit}", load)
+
+
+def pfr_advanced_stats(
+    season: int,
+    stat_type: str = "pass",
+    summary_level: str = "week",
+    limit: int = 2000,
+) -> dict[str, Any]:
+    if not 2018 <= season <= 2100:
+        raise ValueError("season debe estar entre 2018 y 2100 para PFR advanced stats.")
+    if stat_type not in {"pass", "rush", "rec", "def"}:
+        raise ValueError("stat_type debe ser pass, rush, rec o def.")
+    if summary_level not in {"week", "season"}:
+        raise ValueError("summary_level debe ser week o season.")
+    limit = max(1, min(10000, int(limit)))
+    def load():
+        import nflreadpy as nfl
+        frame = nfl.load_pfr_advstats(seasons=season, stat_type=stat_type, summary_level=summary_level)
+        rows = _frame_records(frame, limit)
+        return {"fuente": "nflverse / Pro Football Reference", "season": season,
+                "stat_type": stat_type, "summary_level": summary_level,
+                "total_registros": len(rows), "estadisticas": rows, "cache_segundos": _CACHE_TTL}
+    return _cached(f"pfr-advanced:{season}:{stat_type}:{summary_level}:{limit}", load)
 
 
 def injuries(season: int, limit: int = 1000) -> dict[str, Any]:
