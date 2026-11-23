@@ -1,6 +1,5 @@
--- AppApuestas historical snapshots for Supabase Postgres.
--- Apply this migration only to the Supabase project intentionally assigned to AppApuestas.
--- The backend service-role key remains private in Render; never put it in the browser.
+-- Backend-only historical snapshots for AppApuestas.
+-- The service-role key remains private in Render and is never sent to the browser.
 
 create table if not exists public.research_snapshots (
     provider text not null,
@@ -20,23 +19,23 @@ create index if not exists research_snapshots_match_date_idx
     on public.research_snapshots (match_id, snapshot_date desc);
 
 alter table public.research_snapshots enable row level security;
-
--- Intentionally no anon/authenticated policies. The backend-only service role
--- bypasses RLS and is never exposed to the browser or mobile client.
 revoke all on table public.research_snapshots from anon, authenticated;
-grant select, insert, update on table public.research_snapshots to service_role;
+grant select, insert, update, delete on table public.research_snapshots to service_role;
 
-create or replace function public.set_research_snapshots_updated_at()
+create or replace function public.set_app_research_updated_at()
 returns trigger
 language plpgsql
+set search_path = pg_catalog
 as $$
 begin
-    new.updated_at = now();
+    new.updated_at = pg_catalog.now();
     return new;
 end;
 $$;
 
+revoke execute on function public.set_app_research_updated_at() from public, anon, authenticated;
+
 drop trigger if exists research_snapshots_updated_at on public.research_snapshots;
 create trigger research_snapshots_updated_at
 before update on public.research_snapshots
-for each row execute function public.set_research_snapshots_updated_at();
+for each row execute function public.set_app_research_updated_at();
