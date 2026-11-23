@@ -62,7 +62,7 @@ Rutas principales:
 - `GET /api/v1/research/storage/status`
 - `GET /api/v1/research/storage/history/{match_id}?provider=pitchapi`
 
-La URL y la service-role key se configuran solo en Render. La key no debe llegar al frontend ni a Flutter. Los resúmenes de cuotas guardan apertura, cierre y rangos; no son un histórico tick a tick.
+La URL y la clave secreta de Supabase (`sb_secret_...`) se configuran solo en Render. La clave no debe llegar al frontend ni a Flutter. El backend también admite temporalmente la antigua `service_role` JWT. Los resúmenes de cuotas guardan apertura, cierre y rangos; no son un histórico tick a tick.
 
 Deportes admitidos: \`futbol\`, \`nba\`, \`nfl\`, \`mlb\`.
 
