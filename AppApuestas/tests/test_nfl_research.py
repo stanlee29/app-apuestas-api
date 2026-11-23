@@ -1,6 +1,6 @@
 import unittest
 
-from nfl_research import play_by_play, schedules, weekly_rosters
+from nfl_research import play_by_play, schedules, weekly_rosters, statistics, nextgen_stats, pfr_advanced_stats
 
 
 class NFLResearchTests(unittest.TestCase):
@@ -19,6 +19,16 @@ class NFLResearchTests(unittest.TestCase):
     def test_roster_requires_supported_season(self):
         with self.assertRaises(ValueError):
             weekly_rosters(2001)
+    def test_rejects_invalid_stat_dimensions(self):
+        with self.assertRaises(ValueError):
+            statistics(2026, entity="coach")
+        with self.assertRaises(ValueError):
+            statistics(2026, summary_level="daily")
+        with self.assertRaises(ValueError):
+            nextgen_stats(2026, stat_type="kicking")
+        with self.assertRaises(ValueError):
+            pfr_advanced_stats(2026, stat_type="special")
+
 
 
 if __name__ == "__main__":
