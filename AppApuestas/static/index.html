@@ -12,6 +12,7 @@
   <script src="/static/app.js" defer></script>
   <script src="/static/research-live.js" defer></script>
   <script src="/static/thesportsdb-research.js" defer></script>
+  <script src="/static/nba-research.js" defer></script>
 </head>
 <body>
   <div class="app-frame">
@@ -165,6 +166,32 @@
           <div id="tsdb-output" class="research-output"></div>
           <p class="research-muted">El acceso gratuito tiene límites por endpoint y la cobertura varía. Las fichas de jugadores se muestran como muestra parcial de hasta 10 registros activos por club. Confirma alineaciones y estadísticas con PitchAPI antes de utilizarlas en predicciones.</p>
         </section>
+
+        <details id="nba-research" class="research-archive">
+          <summary><span>NBA Research · Tiros, rosters e historiales</span><small>NBA.com Stats · mapas de lanzamiento · game logs</small></summary>
+          <div class="research-explainer"><strong>Fuente separada de fútbol</strong><p>Este módulo utiliza estadísticas y coordenadas nativas de NBA.com. Los mapas representan tiros de baloncesto, no se mezclan con xG ni con coordenadas de fútbol. La disponibilidad depende del acceso que NBA.com permita desde Render.</p></div>
+          <div class="pitch-research-controls">
+            <label class="research-field">Fecha de cartelera<input id="nba-date" class="select-control" type="date"></label>
+            <label class="research-field">Temporada NBA<input id="nba-season" class="select-control" type="text" value="2026-27" maxlength="7" pattern="[0-9]{4}-[0-9]{2}"></label>
+            <label class="research-field research-wide">Partido<select id="nba-game" class="select-control" disabled><option value="">Primero consulta la cartelera</option></select></label>
+            <label class="research-field">Filtrar tiros por equipo<select id="nba-team-filter" class="select-control"><option value="all">Ambos equipos</option><option value="home">Equipo local</option><option value="away">Equipo visitante</option></select></label>
+            <label class="research-field">ID de jugador (opcional)<input id="nba-player-id" class="select-control" type="text" inputmode="numeric" placeholder="Ej. 2544"></label>
+            <label class="research-field research-wide">Roster de equipo<select id="nba-team-roster-select" class="select-control"><option value="">Cargando equipos NBA…</option></select></label>
+            <label class="research-field">Game logs<select id="nba-log-entity" class="select-control"><option value="T">Equipos</option><option value="P">Jugadores</option></select></label>
+          </div>
+          <div class="pitch-research-actions">
+            <button id="nba-load" class="research-button secondary" type="button">Consultar cartelera</button>
+            <button id="nba-shots" class="research-button" type="button" disabled>Generar mapa de tiros</button>
+            <button id="nba-roster" class="research-button secondary" type="button">Consultar roster</button>
+            <button id="nba-logs" class="research-button secondary" type="button">Consultar historial</button>
+          </div>
+          <div id="nba-status" class="research-status" role="status">NBA.com Stats · elige una fecha y consulta la cartelera para comenzar.</div>
+          <div id="nba-output" class="research-output"></div>
+          <div id="nba-shot-output" class="research-output"></div>
+          <div id="nba-roster-output" class="research-output"></div>
+          <div id="nba-log-output" class="research-output"></div>
+          <p class="research-muted">Las estadísticas de partidos, tiros y rosters dependen de los datos publicados por NBA.com y pueden sufrir límites de acceso. Las listas de jugadores se consultan por temporada para reducir el riesgo de mostrar plantillas antiguas.</p>
+        </details>
 
         <details id="statsbomb-archive" class="research-archive">
           <summary><span>Archivo histórico StatsBomb</span><small>Datos de temporadas antiguas · análisis histórico, no plantilla vigente</small></summary>
