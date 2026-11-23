@@ -190,6 +190,80 @@ class ResearchStorage:
             "el historial de snapshots",
         )
 
+    def odds_snapshots_for_teams(
+        self,
+        home_team: str,
+        away_team: str,
+        match_date: str,
+        limit: int = 1,
+    ) -> dict[str, Any]:
+        """Encuentra snapshots de SportsGameOdds para el mismo cruce y día UTC."""
+        home = " ".join(str(home_team or "").split())
+        away = " ".join(str(away_team or "").split())
+        if not home or not away or home.casefold() == away.casefold():
+            raise ValueError("Los dos equipos deben ser válidos y distintos.")
+        # Reuse the strict team-name validation before building PostgREST filters.
+        self._team_or_filter(home)
+        self._team_or_filter(away)
+        target_date = date.fromisoformat(match_date).isoformat()
+        safe_limit = max(1, min(5, int(limit)))
+
+        def quoted(value: str) -> str:
+            return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+        orientations = (
+            "(and(payload->>local.eq." + quoted(home) +
+            ",payload->>visitante.eq." + quoted(away) + "),"
+            "and(payload->>local.eq." + quoted(away) +
+            ",payload->>visitante.eq." + quoted(home) + "))"
+        )
+        rows = self._get_rows(
+            self.table,
+            {
+                "select": "provider,match_id,snapshot_type,snapshot_date,source_timestamp,model_version,payload",
+                "provider": "eq.sportsgameodds",
+                "snapshot_type": "eq.daily_markets",
+                "payload->>fecha_hora": "like." + target_date + "*",
+                "or": orientations,
+                "order": "snapshot_date.desc",
+                "limit": str(safe_limit),
+            },
+            "los snapshots diarios de SportsGameOdds",
+        )
+
+        # Verify the exact orientation after retrieval; never rely on a fuzzy team match.
+        events = []
+        for row in rows:
+            payload = row.get("payload") if isinstance(row.get("payload"), dict) else {}
+            pair = (
+                str(payload.get("local") or "").casefold(),
+                str(payload.get("visitante") or "").casefold(),
+            )
+            if pair not in {
+                (home.casefold(), away.casefold()),
+                (away.casefold(), home.casefold()),
+            }:
+                continue
+            events.append({
+                "match_id": row.get("match_id"),
+                "snapshot_date": row.get("snapshot_date"),
+                "source_timestamp": row.get("source_timestamp"),
+                "fecha_partido": payload.get("fecha_hora"),
+                "liga": payload.get("liga"),
+                "local": payload.get("local"),
+                "visitante": payload.get("visitante"),
+                "estado_evento": payload.get("estado_evento"),
+                "mercados_disponibles": payload.get("mercados_disponibles"),
+                "mercados": payload.get("mercados") if isinstance(payload.get("mercados"), list) else [],
+            })
+        return {
+            "provider": "sportsgameodds",
+            "equipos_solicitados": {"local": home, "visitante": away},
+            "fecha_utc": target_date,
+            "total_snapshots": len(events),
+            "snapshots": events,
+        }
+
     def team_archive(
         self,
         team_name: str,
