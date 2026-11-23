@@ -283,9 +283,14 @@ def research_status():
         },
         "capacidades": {
             "cartelera_y_cuotas": "SportsGameOdds",
-            "xg_remates_h2h_heatmaps": "PitchAPI (requiere clave gratuita)",
-            "eventos_alineaciones_estadisticas_auxiliares": "TheSportsDB API pública gratuita",
+            "futbol_actual_analitica": "PitchAPI (clave gratuita, cobertura variable por partido)",
+            "futbol_historico_eventos": "StatsBomb Open Data (competiciones publicadas; sin feed en vivo)",
+            "fuente_auxiliar_futbol": "TheSportsDB API pública (cuota compartida y cobertura parcial)",
+            "historial_resultados_abiertos": "schochastics/football-data (archivo local opcional hasta 2023)",
             "nba_cartelera_tiros_historial_rosters": "nba_api (NBA.com Stats; disponibilidad sujeta a límites del proveedor)",
+            "nfl_play_by_play_rosters_lesiones": "nflreadpy opcional (no instalado en producción base)",
+            "mlb_statcast": "pybaseball opcional (no instalado en producción base)",
+            "historial_persistente": "Supabase REST (desactivado hasta configurar credenciales y migración)",
         },
     }
 
