@@ -32,6 +32,8 @@ from modelos_mercados_statsbomb import predict_match_markets
 from nba_research import (
     NBAResearchError, nba_status, scoreboard as nba_scoreboard,
     game_shots as nba_game_shots, game_logs as nba_game_logs,
+    game_boxscore as nba_game_boxscore, game_play_by_play as nba_game_play_by_play,
+    season_stats as nba_season_stats,
     teams as nba_teams, team_roster as nba_team_roster,
 )
 from nfl_research import (
@@ -677,6 +679,49 @@ def research_nba_game_shots(
 ):
     try:
         return nba_game_shots(game_id, team_id=team_id, player_id=player_id, season=season, season_type=season_type)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except NBAResearchError as exc:
+        raise HTTPException(status_code=exc.status_code, detail={"codigo": exc.code, "mensaje": str(exc)}) from exc
+
+
+@app.get("/api/v1/research/nba/games/{game_id}/boxscore", tags=["Investigación NBA"])
+def research_nba_game_boxscore(game_id: str):
+    try:
+        return nba_game_boxscore(game_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except NBAResearchError as exc:
+        raise HTTPException(status_code=exc.status_code, detail={"codigo": exc.code, "mensaje": str(exc)}) from exc
+
+
+@app.get("/api/v1/research/nba/games/{game_id}/play-by-play", tags=["Investigación NBA"])
+def research_nba_game_play_by_play(
+    game_id: str,
+    limit: int = Query(default=1000, ge=1, le=2500),
+):
+    try:
+        return nba_game_play_by_play(game_id, limit=limit)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except NBAResearchError as exc:
+        raise HTTPException(status_code=exc.status_code, detail={"codigo": exc.code, "mensaje": str(exc)}) from exc
+
+
+@app.get("/api/v1/research/nba/season-stats", tags=["Investigación NBA"])
+def research_nba_season_stats(
+    season: str | None = Query(default=None, max_length=7),
+    entity: str = Query(default="player", pattern="^(player|team)$"),
+    season_type: str = Query(default="Regular Season", max_length=30),
+    per_mode: str = Query(default="PerGame", max_length=25),
+    measure_type: str = Query(default="Base", max_length=20),
+    limit: int = Query(default=500, ge=1, le=2000),
+):
+    try:
+        return nba_season_stats(
+            season=season, entity=entity, season_type=season_type,
+            per_mode=per_mode, measure_type=measure_type, limit=limit,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except NBAResearchError as exc:
