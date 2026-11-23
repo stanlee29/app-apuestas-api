@@ -47,3 +47,4 @@ jobs:
           node --check static/research-live.js
           node --check static/thesportsdb-research.js
           node --check static/nba-research.js
+          node --check static/pro-sports-research.js
