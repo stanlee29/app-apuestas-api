@@ -110,7 +110,7 @@ Los 440,959 resúmenes compactan 821,636 observaciones anteriores. Se conservan 
 - `team_identity_map` y `event_identity_aliases`: equivalencias de IDs con confianza.
 - `research_snapshots`: snapshots diarios de análisis generados por AppApuestas.
 
-Las seis tablas tienen RLS activo. No hay políticas para `anon` ni `authenticated`; el backend usa `service_role` desde Render. La clave de servicio nunca debe incluirse en el navegador, GitHub ni APK.
+Las seis tablas tienen RLS activo. No hay políticas para `anon` ni `authenticated`; el backend usa una clave secreta de Supabase (`sb_secret_`, que opera con el rol `service_role`) desde Render. La clave de servicio nunca debe incluirse en el navegador, GitHub ni APK.
 
 ### Endpoints nuevos
 
@@ -135,7 +135,7 @@ El endpoint de equipo limita los partidos a fechas anteriores al encuentro consu
 - Quedan cuatro Edge Functions antiguas de EdgeBet desplegadas con JWT desactivado. No se pudieron eliminar desde las herramientas conectadas; deben borrarse manualmente desde **Supabase Dashboard → Edge Functions**.
 - Tamaño de base comprobado tras la limpieza: aproximadamente **231 MB**, por debajo del límite de 500 MB del plan gratuito. Vigilar el crecimiento de snapshots y cuotas.
 
-Variables privadas en Render: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_RESEARCH_TABLE=research_snapshots` y `APP_MODEL_VERSION`. La URL y nombre de tabla pueden configurarse desde Render; para habilitar las consultas falta que se añada la service-role key desde el Dashboard de Render, sin compartirla por chat.
+Variables privadas en Render: `SUPABASE_URL`, `SUPABASE_SECRET_KEY` (recomendada) o `SUPABASE_SERVICE_ROLE_KEY` (legacy), `SUPABASE_RESEARCH_TABLE=research_snapshots` y `APP_MODEL_VERSION`. La URL y el nombre de tabla ya están configurados en Render. Para habilitar las consultas falta añadir `SUPABASE_SECRET_KEY` desde Settings → Environment de Render. No compartas esa clave por chat; no uses la publishable/anon key.
 
 ## Seguridad y estabilidad
 
