@@ -359,3 +359,17 @@ h2 { margin: 5px 0 0; font-size: 21px; letter-spacing: -.025em; }
 .pitch-form-row strong{color:#e0e9f2;font-size:9px;font-variant-numeric:tabular-nums}
 .pitch-form-row small{color:#75889f;font-size:7px}
 @media(max-width:700px){.pitch-form-kpis{grid-template-columns:repeat(4,minmax(0,1fr))}.pitch-form-row{grid-template-columns:20px minmax(0,1fr) auto}.pitch-form-row small{display:none}}
+
+
+/* NBA shot chart uses native NBA coordinates, separate from the football pitch */
+.nba-court{display:block;width:min(100%,620px);height:auto;margin:0 auto;border-radius:8px;overflow:hidden}
+.nba-court-bg{fill:#182331}
+.nba-court-line{fill:none;stroke:#aebccd;stroke-width:2;opacity:.78}
+.nba-shot{stroke:#101a25;stroke-width:1.1;opacity:.88}
+.nba-shot.made{fill:#57d7a0}.nba-shot.missed{fill:#ff9b77}
+.nba-made{background:#57d7a0}.nba-missed{background:#ff9b77}
+#nba-research .research-explainer{margin:0 14px 12px}
+#nba-research .pitch-research-controls,#nba-research .pitch-research-actions,
+#nba-research .research-status,#nba-research .research-output{margin-left:14px;margin-right:14px}
+#nba-research .research-output{margin-bottom:12px}
+@media(max-width:700px){#nba-research .pitch-research-controls{grid-template-columns:1fr}#nba-research .pitch-research-controls .research-wide{grid-column:auto}}
