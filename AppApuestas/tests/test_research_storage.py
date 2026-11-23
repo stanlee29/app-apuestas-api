@@ -121,13 +121,14 @@ class ResearchStorageTests(unittest.TestCase):
         self.assertIsNone(data["metricas_avanzadas"][0]["remates_favor"])
         self.assertEqual(get_rows.call_count, 3)
 
-    def test_market_archive_follows_canonical_event_alias(self):
+    def test_market_archive_follows_alias_to_canonical_event(self):
         storage = self._storage()
         with patch.object(
             storage,
             "_get_rows",
             side_effect=[
                 [{"canonical_event_id": "af:12345"}],
+                [],
                 [{"event_id": "af:12345", "opening_odds": 2.1, "closing_odds": 1.95}],
             ],
         ):
@@ -135,6 +136,22 @@ class ResearchStorageTests(unittest.TestCase):
 
         self.assertEqual(data["event_ids_consultados"], ["gp:999", "af:12345"])
         self.assertEqual(data["mercados"][0]["closing_odds"], 1.95)
+
+    def test_market_archive_follows_canonical_event_to_alias(self):
+        storage = self._storage()
+        with patch.object(
+            storage,
+            "_get_rows",
+            side_effect=[
+                [],
+                [{"alias_event_id": "gp:999"}],
+                [{"event_id": "gp:999", "opening_odds": 2.0, "closing_odds": 1.8}],
+            ],
+        ):
+            data = storage.market_archive("af:12345")
+
+        self.assertEqual(data["event_ids_consultados"], ["af:12345", "gp:999"])
+        self.assertEqual(data["mercados"][0]["closing_odds"], 1.8)
 
 
 if __name__ == "__main__":
