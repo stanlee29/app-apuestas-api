@@ -16,3 +16,6 @@ socceraction
 
 # Lectura de datasets Parquet históricos (incluidos conjuntos de resultados).
 pyarrow
+
+# Consultar el dataset Parquet de resultados históricos sin cargarlo entero.
+duckdb
