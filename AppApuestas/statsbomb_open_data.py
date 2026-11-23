@@ -16,6 +16,7 @@ import requests
 
 BASE_URL = "https://raw.githubusercontent.com/hudl/open-data/master/data"
 CACHE_SECONDS = 6 * 60 * 60
+MAX_CACHE_ENTRIES = 800
 _CACHE: dict[str, tuple[float, Any]] = {}
 _LOCK = threading.Lock()
 
@@ -44,20 +45,28 @@ class StatsBombOpenData:
             "User-Agent": "AppApuestas-Research/1.0 (StatsBomb Open Data attribution)",
         })
 
-    def _json(self, path: str, ttl: int = CACHE_SECONDS) -> Any:
+    def _json(self, path: str, ttl: int = CACHE_SECONDS, optional: bool = False) -> Any:
         if path.startswith("/") or ".." in path:
             raise ValueError("Ruta de recurso no válida.")
         key = path
         now = time.monotonic()
         with _LOCK:
             cached = _CACHE.get(key)
-            if cached and now - cached[0] < ttl:
-                return cached[1]
+            if cached is not None:
+                if now - cached[0] < ttl:
+                    return cached[1]
+                _CACHE.pop(key, None)
         try:
             response = self.session.get(f"{BASE_URL}/{path}", timeout=self.timeout)
         except requests.RequestException as exc:
             raise StatsBombDataError(f"No fue posible consultar StatsBomb Open Data: {exc}") from exc
         if response.status_code == 404:
+            if optional:
+                with _LOCK:
+                    _CACHE[key] = (now, None)
+                    while len(_CACHE) > MAX_CACHE_ENTRIES:
+                        _CACHE.pop(next(iter(_CACHE)), None)
+                return None
             raise StatsBombDataError(
                 "StatsBomb Open Data no publica el recurso solicitado para esa competición y temporada.",
                 status_code=404,
@@ -70,6 +79,8 @@ class StatsBombOpenData:
             raise StatsBombDataError("StatsBomb Open Data devolvió JSON no válido.") from exc
         with _LOCK:
             _CACHE[key] = (now, payload)
+            while len(_CACHE) > MAX_CACHE_ENTRIES:
+                _CACHE.pop(next(iter(_CACHE)), None)
         return payload
 
     @staticmethod
@@ -302,10 +313,9 @@ class StatsBombOpenData:
             raise StatsBombDataError("El partido no pertenece a la competición/temporada indicada.", 404)
 
         events = self._json(f"events/{match_id}.json", ttl=24 * 60 * 60)
-        try:
-            lineups = self._json(f"lineups/{match_id}.json", ttl=24 * 60 * 60)
-        except StatsBombDataError:
-            lineups = []
+        lineups = self._json(
+            f"lineups/{match_id}.json", ttl=24 * 60 * 60, optional=True
+        ) or []
 
         if not isinstance(events, list):
             raise StatsBombDataError("El feed de eventos del partido no tiene el formato esperado.")
