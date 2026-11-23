@@ -23,7 +23,7 @@ STATCAST_COLUMNS = [
     "batter", "pitcher", "stand", "p_throws", "events", "description",
     "zone", "balls", "strikes", "inning", "inning_topbot",
     "launch_speed", "launch_angle", "hit_distance_sc",
-    "estimated_ba_using_speedangle", "estimated_woba_using_speedangle",
+    "plate_x", "plate_z", "estimated_ba_using_speedangle", "estimated_woba_using_speedangle",
     "woba_value", "home_score", "away_score", "home_team", "away_team",
 ]
 
