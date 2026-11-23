@@ -2,7 +2,7 @@ import unittest
 
 import pandas as pd
 
-from nba_research import dataframe_records, game_shots, team_roster
+from nba_research import dataframe_records, game_shots, game_boxscore, game_play_by_play, season_stats, team_roster
 
 
 class NBAResearchTests(unittest.TestCase):
@@ -32,6 +32,22 @@ class NBAResearchTests(unittest.TestCase):
             team_roster(0)
         with self.assertRaises(ValueError):
             team_roster(1610612737, season="current")
+
+    def test_rejects_invalid_game_id_for_boxscore_and_play_by_play(self):
+        with self.assertRaises(ValueError):
+            game_boxscore("bad-id")
+        with self.assertRaises(ValueError):
+            game_play_by_play("bad-id")
+
+    def test_rejects_invalid_season_stats_filters(self):
+        with self.assertRaises(ValueError):
+            season_stats(season="2026", entity="player")
+        with self.assertRaises(ValueError):
+            season_stats(entity="coach")
+        with self.assertRaises(ValueError):
+            season_stats(per_mode="PerPossession")
+        with self.assertRaises(ValueError):
+            season_stats(measure_type="Fake")
 
 
 if __name__ == "__main__":
