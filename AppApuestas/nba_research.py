@@ -198,11 +198,12 @@ def game_shots(
 
 
 def game_logs(
-    season: str = "2026-27",
+    season: str | None = None,
     entity: str = "T",
     season_type: str = "Regular Season",
     limit: int = 200,
 ) -> dict[str, Any]:
+    season = season or current_nba_season()
     if not re.fullmatch(r"\d{4}-\d{2}", season):
         raise ValueError("season debe tener formato YYYY-YY.")
     if entity not in {"T", "P"}:
@@ -256,7 +257,8 @@ def teams() -> dict[str, Any]:
     return _cached("teams:all", load)
 
 
-def team_roster(team_id: int, season: str = "2026-27") -> dict[str, Any]:
+def team_roster(team_id: int, season: str | None = None) -> dict[str, Any]:
+    season = season or current_nba_season()
     if team_id <= 0:
         raise ValueError("team_id debe ser positivo.")
     if not re.fullmatch(r"\d{4}-\d{2}", season):
