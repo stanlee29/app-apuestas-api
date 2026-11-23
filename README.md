@@ -6,7 +6,9 @@ Aplicación de consulta e investigación deportiva. El backend FastAPI obtiene e
 
 - Cartelera de fútbol, NBA, NFL y MLB, según las ligas disponibles en la cuenta del proveedor.
 - Mercados y selecciones con precios por casa, cuota americana, conversión decimal, línea y hora de actualización.
-- Filtro de eventos en vivo y por rango de días.
+- Selector de fecha exacta para hoy, mañana o pasado mañana en hora de El Salvador; la consulta anterior por rango sigue disponible para compatibilidad.
+- Paginación por cursor de eventos hasta agotar resultados, con un límite configurable que se informa explícitamente cuando se alcanza.
+- Filtro de eventos en vivo.
 - Consulta de probabilidades a partir de los históricos locales cuando hay equipos compatibles.
 - Cálculo de EV únicamente cuando existe una probabilidad del modelo y una cuota real.
 - Caché del servidor alineada por defecto con la frecuencia de 10 minutos anunciada en el plan gratuito.
@@ -22,7 +24,9 @@ El conector utiliza la API v2 de SportsGameOdds:
 - Ligas publicadas en ese nivel: NFL, NBA, MLB, NHL, College Football, College Basketball, Champions League y MLS.
 - La página de alta indica que se solicita tarjeta al registrarse, pero que el plan gratuito no se cobra salvo que se actualice.
 
-La cobertura gratuita se limita a las ligas enumeradas; no representa toda la cartelera mundial. La disponibilidad efectiva debe confirmarse con la cuenta del proveedor. Cada cuota conserva el nombre de la casa que la publica.
+La cobertura gratuita se limita a las ligas enumeradas; no representa toda la cartelera mundial. La disponibilidad efectiva debe confirmarse con la cuenta del proveedor. Cada cuota conserva el nombre de la casa que la publica. La paginación de eventos usa nextCursor; por seguridad se limita a 10 páginas por solicitud de forma predeterminada (configurable mediante SPORTSGAMEODDS_MAX_EVENT_PAGES). Si se llega al límite, la respuesta y la interfaz advierten que el resultado podría estar incompleto.
+
+**GanaPlay no es todavía una fuente conectada.** El backend actual consulta SportsGameOdds. La documentación pública localizada del feed Altenar describe un servicio B2B que requiere un importerId exclusivo del operador y autorización de IP (allowlist). Para una conexión directa hacen falta los datos oficiales de integración entregados por GanaPlay/Altenar; no se ha sustituido esa autorización con scraping de endpoints privados.
 
 Referencias oficiales:
 - https://sportsgameodds.com/pricing
@@ -41,9 +45,10 @@ Añade \`SPORTSGAMEODDS_API_KEY\` a las variables privadas de Render. No guardes
 | \`GET /health\` | Estado del backend y configuración del proveedor |
 | \`GET /api/v1/source/status\` | Estado, ligas y límites publicados |
 | \`GET /api/v1/sports\` | Deportes y ligas configuradas |
-| \`GET /api/v1/events?deporte=nba&dias=2\` | Eventos, mercados y cuotas |
+| \`GET /api/v1/events?deporte=nba&dias=2\` | Eventos, mercados y cuotas por rango |
 | \`GET /api/v1/events/{event_id}/markets\` | Mercados completos de un evento |
-| \`GET /cartelera/{deporte}?dias=2\` | Respuesta compatible con la aplicación Flutter |
+| \`GET /cartelera/{deporte}?fecha=YYYY-MM-DD\` | Cartelera de una fecha exacta (hoy, mañana o pasado mañana) |
+| \`GET /cartelera/{deporte}?dias=2\` | Consulta por rango, conservada por compatibilidad |
 | \`GET /equipos/{deporte}\` | Equipos encontrados en históricos |
 | \`GET /predecir\` | Predicción manual con históricos |
 | \`POST /actualizar-datos\` | Actualizar los CSV de resultados históricos |
