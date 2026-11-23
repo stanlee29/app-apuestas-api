@@ -60,6 +60,8 @@ Rutas principales:
 - `GET /api/v1/research/archive/teams/{team_name}?before_date=YYYY-MM-DD&limit=5`
 - `GET /api/v1/research/archive/events/{event_id}/markets?limit=50`
 - `GET /api/v1/research/storage/status`
+- `POST /api/v1/research/collector/daily` — recolector diario protegido por `X-App-Ingest-Token`; tope de 20 eventos por ejecución y reserva 500 objetos del límite mensual.
+- `GET /api/v1/research/odds/history/{event_id}` — snapshots diarios de mercados por evento.
 - `GET /api/v1/research/storage/history/{match_id}?provider=pitchapi`
 
 La URL y la clave secreta de Supabase (`sb_secret_...`) se configuran solo en Render. La clave no debe llegar al frontend ni a Flutter. El backend también admite temporalmente la antigua `service_role` JWT. Los resúmenes de cuotas guardan apertura, cierre y rangos; no son un histórico tick a tick.
@@ -83,7 +85,7 @@ Abrir http://127.0.0.1:8000 y http://127.0.0.1:8000/docs.
 
 ## Límites operativos
 
-La aplicación consulta al abrir la cartelera o cuando el usuario pulsa actualizar. No se programa sondeo automático en el nivel gratuito para proteger el límite de 2.500 objetos al mes. La caché del servidor evita repetir una consulta durante 10 minutos. Esto no es un recolector permanente 24/7. Un servicio gratuito puede suspenderse y su disco local no debe usarse como histórico persistente. Para almacenar capturas de cuotas y recopilar con la app cerrada se requiere base de datos y un proceso programado/worker con disponibilidad adecuada.
+La aplicación consulta al abrir la cartelera o cuando el usuario pulsa actualizar. El recolector histórico de cuotas se ejecuta una vez al día desde Supabase Cron, almacena como máximo 20 eventos y consulta primero `/account/usage` para preservar una reserva de 500 objetos mensuales. No se programa sondeo automático en el nivel gratuito para proteger el límite de 2.500 objetos al mes. La caché del servidor evita repetir una consulta durante 10 minutos. Esto no es un recolector permanente 24/7. Un servicio gratuito puede suspenderse y su disco local no debe usarse como histórico persistente. Para almacenar capturas de cuotas y recopilar con la app cerrada se requiere base de datos y un proceso programado/worker con disponibilidad adecuada.
 
 ## Modelo estadístico
 
