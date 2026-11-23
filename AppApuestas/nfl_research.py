@@ -189,9 +189,14 @@ def statistics(
     season: int,
     entity: str = "player",
     summary_level: str = "week",
+    week: int | None = None,
     limit: int = 2000,
 ) -> dict[str, Any]:
     _validate_season(season)
+    if week is not None and not 1 <= week <= 25:
+        raise ValueError("week debe estar entre 1 y 25.")
+    if week is not None and summary_level != "week":
+        raise ValueError("week solo se puede combinar con summary_level=week.")
     if entity not in {"player", "team"}:
         raise ValueError("entity debe ser player o team.")
     if summary_level not in {"week", "reg", "post", "reg+post"}:
@@ -202,17 +207,20 @@ def statistics(
         import nflreadpy as nfl
         loader = nfl.load_player_stats if entity == "player" else nfl.load_team_stats
         frame = loader(seasons=season, summary_level=summary_level)
+        if week is not None and "week" in frame.columns:
+            frame = frame.filter(pl.col("week") == week)
         rows = _frame_records(frame, limit)
         return {
             "fuente": "nflverse",
             "season": season,
             "entity": entity,
             "summary_level": summary_level,
+            "week": week,
             "total_registros": len(rows),
             "estadisticas": rows,
             "cache_segundos": _CACHE_TTL,
         }
-    return _cached(f"stats:{season}:{entity}:{summary_level}:{limit}", load)
+    return _cached(f"stats:{season}:{entity}:{summary_level}:{week}:{limit}", load)
 
 
 def snap_counts(season: int, limit: int = 2000) -> dict[str, Any]:
