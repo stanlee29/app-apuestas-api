@@ -20,6 +20,8 @@ BASE_URL = "https://api.pitchapi.dev/v1"
 _CACHE: dict[str, tuple[float, Any]] = {}
 _CACHE_LOCK = threading.Lock()
 MAX_CACHE_ENTRIES = 1200
+_RATE_LIMIT_UNTIL = 0.0
+_RATE_LIMIT_LOCK = threading.Lock()
 try:
     CACHE_SECONDS = max(30, int(os.getenv("PITCHAPI_CACHE_SECONDS", "300")))
 except (TypeError, ValueError):
@@ -90,6 +92,14 @@ class PitchAPIClient:
         cache_key = clean_path + repr(query)
         now = time.monotonic()
         ttl = CACHE_SECONDS if cache_seconds is None else max(0, cache_seconds)
+        with _RATE_LIMIT_LOCK:
+            retry_in = max(0, int(_RATE_LIMIT_UNTIL - now))
+        if retry_in > 0:
+            raise PitchAPIError(
+                f"PitchAPI está en pausa local por límite de solicitudes. Reintenta en {retry_in} segundos.",
+                status_code=503,
+                code="PITCHAPI_RATE_LIMIT",
+            )
         found, cached_value = _cache_read(cache_key, now, ttl)
         if found:
             return cached_value
@@ -115,9 +125,16 @@ class PitchAPIClient:
                 code="PITCHAPI_UNAUTHORIZED",
             )
         if response.status_code == 429:
-            retry_after = response.headers.get("Retry-After", "unos segundos")
+            retry_header = response.headers.get("Retry-After", "60")
+            try:
+                retry_seconds = max(10, min(600, int(retry_header)))
+            except (TypeError, ValueError):
+                retry_seconds = 60
+            global _RATE_LIMIT_UNTIL
+            with _RATE_LIMIT_LOCK:
+                _RATE_LIMIT_UNTIL = max(_RATE_LIMIT_UNTIL, time.monotonic() + retry_seconds)
             raise PitchAPIError(
-                f"PitchAPI solicitó reducir la frecuencia de consulta. Reintenta después de {retry_after}.",
+                f"PitchAPI alcanzó su límite de consultas. El conector pausó nuevas llamadas durante {retry_seconds} segundos.",
                 status_code=503,
                 code="PITCHAPI_RATE_LIMIT",
             )
@@ -204,13 +221,16 @@ class PitchAPIClient:
         # una liga/partido puede tener marcador sin disponer de eventos avanzados.
         match = self._get(f"/matches/{encoded}")
         warnings: list[dict[str, str]] = []
+        upstream_paused = False
 
         def optional_block(name: str, path: str, params: dict[str, Any] | None = None) -> Any:
+            nonlocal upstream_paused
+            if upstream_paused:
+                return {}
             try:
                 return self._get(path, params, optional=True) or {}
             except PitchAPIError as exc:
-                # No ocultamos la ficha obligatoria; preservamos el informe principal
-                # ante límites/errores temporales en los bloques suplementarios.
+                # No ocultamos la ficha obligatoria; preservamos el informe principal.
                 if exc.code in {"PITCHAPI_UNAUTHORIZED", "PITCHAPI_NOT_CONFIGURED"}:
                     raise
                 warnings.append({
@@ -218,6 +238,8 @@ class PitchAPIClient:
                     "codigo": exc.code,
                     "mensaje": str(exc),
                 })
+                if exc.code == "PITCHAPI_RATE_LIMIT":
+                    upstream_paused = True
                 return {}
 
         shots_data = optional_block("remates", f"/matches/{encoded}/shots")
@@ -386,9 +408,13 @@ class PitchAPIClient:
 
 def pitchapi_status() -> dict[str, Any]:
     configured = bool(os.getenv("PITCHAPI_API_KEY", "").strip())
+    with _RATE_LIMIT_LOCK:
+        retry_in = max(0, int(_RATE_LIMIT_UNTIL - time.monotonic()))
     return {
         "proveedor": "PitchAPI",
         "configurado": configured,
+        "rate_limit_activo": retry_in > 0,
+        "reintento_en_segundos": retry_in,
         "tipo_datos": [
             "77 ligas de fútbol en catálogo (según documentación del proveedor)",
             "fixtures e históricos desde 2021",
