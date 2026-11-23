@@ -496,7 +496,13 @@
     if (persistencia && persistencia.guardado === true) {
       return '<section class="research-card"><h3>Historial persistente</h3><p class="research-muted">Este análisis se guardó en Supabase. Puedes consultar snapshots anteriores del mismo partido.</p><button type="button" class="research-button secondary" id="pitch-history-load">Consultar análisis guardados</button><div id="pitch-history-output" class="research-output"></div></section>';
     }
-    return '<section class="research-card"><h3>Historial persistente</h3><div class="pitch-empty">Supabase todavía no está configurado para AppApuestas. El análisis actual se muestra normalmente, pero no se conserva después de reiniciar Render.</div></section>';
+    const reason = persistencia && persistencia.motivo || "";
+    const message = reason === "SUPABASE_NOT_CONFIGURED"
+      ? "Supabase todavía no está configurado para AppApuestas. El análisis se muestra normalmente, pero no se conserva después de reiniciar Render."
+      : reason === "STORAGE_UNAVAILABLE"
+        ? "No se pudo guardar este snapshot. Revisa la configuración o la conectividad de Supabase; el análisis actual sí está disponible."
+        : "El almacenamiento persistente no está habilitado para esta consulta.";
+    return '<section class="research-card"><h3>Historial persistente</h3><div class="pitch-empty">' + esc(message) + '</div></section>';
   }
   async function loadStoredHistory(matchId) {
     const button = $("pitch-history-load");
