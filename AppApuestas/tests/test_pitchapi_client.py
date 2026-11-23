@@ -144,6 +144,15 @@ class PitchAPITests(unittest.TestCase):
         self.assertEqual(len(calls), 2)
         self.assertEqual(len(result["advertencias"]), 1)
 
+    def test_404_de_partido_se_informa_como_not_found(self):
+        client = PitchAPIClient(api_key="test-key")
+        response = SimpleNamespace(status_code=404, headers={}, reason="Not Found")
+        with patch.object(client.session, "get", return_value=response):
+            with self.assertRaises(PitchAPIError) as context:
+                client._get("/matches/m_B8x2K9")
+        self.assertEqual(context.exception.status_code, 404)
+        self.assertEqual(context.exception.code, "PITCHAPI_NOT_FOUND")
+
     def test_404_opcional_se_cachea(self):
         client = PitchAPIClient(api_key="test-key")
         response = SimpleNamespace(status_code=404, headers={}, reason="Not Found")
