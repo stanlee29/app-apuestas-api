@@ -13,6 +13,7 @@
   <script src="/static/research-live.js" defer></script>
   <script src="/static/thesportsdb-research.js" defer></script>
   <script src="/static/nba-research.js" defer></script>
+  <script src="/static/pro-sports-research.js" defer></script>
 </head>
 <body>
   <div class="app-frame">
@@ -191,6 +192,40 @@
           <div id="nba-roster-output" class="research-output"></div>
           <div id="nba-log-output" class="research-output"></div>
           <p class="research-muted">Las estadísticas de partidos, tiros y rosters dependen de los datos publicados por NBA.com y pueden sufrir límites de acceso. Las listas de jugadores se consultan por temporada para reducir el riesgo de mostrar plantillas antiguas.</p>
+        </details>
+
+        <details id="pro-sports-research" class="research-archive">
+          <summary><span>NFL + MLB Research · Play-by-play y Statcast</span><small>Conectores opcionales · datos de temporada</small></summary>
+          <div class="research-explainer"><strong>Fuentes opcionales por deporte</strong><p>NFL usa nflreadpy/nflverse. MLB usa Statcast por pybaseball. Ambos paquetes se mantienen fuera de las dependencias obligatorias; este panel mostrará el estado real de instalación antes de intentar consultar datos.</p><div class="pitch-two-col"><div class="pitch-subcard"><h4>NFL · fuente</h4><p id="nfl-source-status" class="research-muted">Verificando nflreadpy…</p></div><div class="pitch-subcard"><h4>MLB · fuente</h4><p id="mlb-source-status" class="research-muted">Verificando pybaseball…</p></div></div></div>
+          <section class="pitch-subcard">
+            <h3>NFL · calendario y jugadas</h3>
+            <div class="pitch-research-controls">
+              <label class="research-field">Temporada<input id="nfl-season" class="select-control" type="number" min="1999" max="2100" value="2026"></label>
+              <label class="research-field">Semana<input id="nfl-week" class="select-control" type="number" min="1" max="25" placeholder="Todas"></label>
+              <label class="research-field research-wide">Partido para play-by-play<select id="nfl-game" class="select-control"><option value="">Consulta primero el calendario</option></select></label>
+            </div>
+            <div class="pitch-research-actions">
+              <button id="nfl-load-schedule" class="research-button secondary" type="button">Calendario NFL</button>
+              <button id="nfl-pbp" class="research-button" type="button" disabled>Play-by-play</button>
+              <button id="nfl-rosters" class="research-button secondary" type="button">Rosters semanales</button>
+              <button id="nfl-injuries" class="research-button secondary" type="button">Lesiones</button>
+              <button id="nfl-depth" class="research-button secondary" type="button">Depth charts</button>
+            </div>
+            <div id="nfl-output" class="research-output"></div>
+          </section>
+          <section class="pitch-subcard">
+            <h3>MLB · Statcast</h3>
+            <div class="pitch-research-controls">
+              <label class="research-field">Fecha inicial<input id="mlb-start" class="select-control" type="date"></label>
+              <label class="research-field">Fecha final<input id="mlb-end" class="select-control" type="date"></label>
+              <label class="research-field">ID de bateador (opcional)<input id="mlb-batter-id" class="select-control" type="text" inputmode="numeric" placeholder="Batter ID"></label>
+              <label class="research-field">ID de lanzador (opcional)<input id="mlb-pitcher-id" class="select-control" type="text" inputmode="numeric" placeholder="Pitcher ID"></label>
+            </div>
+            <div class="pitch-research-actions"><button id="mlb-load" class="research-button" type="button">Consultar Statcast</button></div>
+            <div id="mlb-output" class="research-output"></div>
+            <p class="research-muted">Ventana máxima de tres días por consulta. Revisa los términos de Baseball Savant y de los proveedores de los que proceden estos datos antes de redistribuirlos.</p>
+          </section>
+          <div id="pro-sports-status" class="research-status" role="status">Fuentes opcionales · primero verifica instalación y disponibilidad.</div>
         </details>
 
         <details id="statsbomb-archive" class="research-archive">
