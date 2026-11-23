@@ -531,7 +531,18 @@ def research_statsbomb_match_analysis(
     season_id: int = Query(..., ge=1),
 ):
     try:
-        return StatsBombOpenData().match_analysis(match_id, competition_id, season_id)
+        result = StatsBombOpenData().match_analysis(match_id, competition_id, season_id)
+        storage = ResearchStorage()
+        try:
+            result["persistencia"] = storage.save_snapshot(
+                provider="statsbomb",
+                match_id=str(match_id),
+                snapshot_type=f"match_analysis_c{competition_id}_s{season_id}",
+                payload=result,
+            )
+        except (ResearchStorageError, ValueError):
+            result["persistencia"] = {"guardado": False, "motivo": "STORAGE_UNAVAILABLE"}
+        return result
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except StatsBombDataError as exc:
