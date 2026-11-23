@@ -19,6 +19,7 @@ concurrency:
 jobs:
   tests:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: AppApuestas
@@ -45,3 +46,4 @@ jobs:
           node --check static/app.js
           node --check static/research-live.js
           node --check static/thesportsdb-research.js
+          node --check static/nba-research.js
