@@ -5,9 +5,11 @@ grandes: los endpoints de juego requieren game_id y limitan registros devueltos.
 """
 from __future__ import annotations
 
+import math
 import re
 import threading
 import time
+from datetime import date, datetime
 from typing import Any
 
 _CACHE: dict[str, tuple[float, Any]] = {}
@@ -23,6 +25,23 @@ class NFLResearchError(RuntimeError):
         self.code = code
 
 
+def _json_value(value: Any) -> Any:
+    if value is None:
+        return None
+    if hasattr(value, "item"):
+        try:
+            value = value.item()
+        except (ValueError, AttributeError):
+            pass
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    if isinstance(value, (date, datetime)):
+        return value.isoformat()
+    if isinstance(value, (str, int, float, bool)):
+        return value
+    return str(value)
+
+
 def _frame_records(frame: Any, limit: int) -> list[dict[str, Any]]:
     if frame is None:
         return []
@@ -35,7 +54,12 @@ def _frame_records(frame: Any, limit: int) -> list[dict[str, Any]]:
             rows = frame.to_dict(orient="records")
     except Exception as exc:
         raise NFLResearchError("nflreadpy devolvió una tabla con formato inesperado.") from exc
-    return rows if isinstance(rows, list) else []
+    if not isinstance(rows, list):
+        return []
+    return [
+        {str(key): _json_value(value) for key, value in row.items()}
+        for row in rows if isinstance(row, dict)
+    ]
 
 
 def _cached(key: str, loader):
