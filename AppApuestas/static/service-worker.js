@@ -1,6 +1,6 @@
 "use strict";
-const CACHE_NAME="app-apuestas-shell-v8";
-const APP_SHELL=["/","/static/styles.css","/static/app.js","/static/research-live.js","/static/icon.svg","/manifest.webmanifest"];
+const CACHE_NAME="app-apuestas-shell-v9";
+const APP_SHELL=["/","/static/styles.css","/static/app.js","/static/research-live.js","/static/thesportsdb-research.js","/static/nba-research.js","/static/icon.svg","/manifest.webmanifest"];
 
 self.addEventListener("install",(event)=>{
   event.waitUntil(caches.open(CACHE_NAME).then(cache=>cache.addAll(APP_SHELL)).then(()=>self.skipWaiting()));
