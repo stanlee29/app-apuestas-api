@@ -205,6 +205,7 @@ def statistics(
 
     def load():
         import nflreadpy as nfl
+        import polars as pl
         loader = nfl.load_player_stats if entity == "player" else nfl.load_team_stats
         frame = loader(seasons=season, summary_level=summary_level)
         if week is not None and "week" in frame.columns:
