@@ -93,6 +93,11 @@ class PitchAPIClient:
         cache_key = clean_path + repr(query)
         now = time.monotonic()
         ttl = CACHE_SECONDS if cache_seconds is None else max(0, cache_seconds)
+        # Las respuestas recientes en caché se pueden seguir sirviendo durante
+        # una pausa por 429; el limitador solo bloquea peticiones a la red.
+        found, cached_value = _cache_read(cache_key, now, ttl)
+        if found:
+            return cached_value
         with _RATE_LIMIT_LOCK:
             retry_in = max(0, int(_RATE_LIMIT_UNTIL - now))
         if retry_in > 0:
@@ -101,9 +106,6 @@ class PitchAPIClient:
                 status_code=503,
                 code="PITCHAPI_RATE_LIMIT",
             )
-        found, cached_value = _cache_read(cache_key, now, ttl)
-        if found:
-            return cached_value
 
         try:
             response = self.session.get(
