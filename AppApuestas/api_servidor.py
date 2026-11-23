@@ -22,6 +22,7 @@ from sports_game_odds import (
     ProviderResponseError,
     provider_status,
     EL_SALVADOR_TZ,
+    calendar_day_window,
 )
 
 from integraciones_pitchapi import PitchAPIClient, PitchAPIError, pitchapi_status
@@ -109,16 +110,27 @@ def _provider_http_error(exc: Exception) -> HTTPException:
     return HTTPException(status_code=502, detail=f"Error consultando el proveedor deportivo: {exc}")
 
 
-def _get_events_cached(sport: str, days: int, live: bool | None = None) -> dict[str, Any]:
+def _get_events_cached(
+    sport: str,
+    days: int,
+    live: bool | None = None,
+    match_date: date | None = None,
+) -> dict[str, Any]:
     local_day = datetime.now(EL_SALVADOR_TZ).date().isoformat()
-    key = f"{sport}:{days}:{live}:{local_day}"
+    period_key = f"fecha={match_date.isoformat()}" if match_date else f"dias={days}"
+    key = f"{sport}:{period_key}:{live}:{local_day}"
     now = time.monotonic()
     cached = _event_cache.get(key)
     if cached and now - cached[0] < EVENT_CACHE_SECONDS:
         return cached[1]
 
     try:
-        result = _client().get_events(sport, days=days, live=live)
+        result = _client().get_events(
+            sport,
+            days=days,
+            live=live,
+            match_date=match_date,
+        )
     except (ProviderConfigurationError, ProviderAccessError, ProviderResponseError) as exc:
         raise _provider_http_error(exc) from exc
 
@@ -137,6 +149,7 @@ def _get_events_cached(sport: str, days: int, live: bool | None = None) -> dict[
             })
     _trim_cache(_market_cache, MARKET_CACHE_MAX_ENTRIES)
     return result
+
 
 
 def _get_markets_cached(event_id: str) -> dict[str, Any]:
@@ -1030,8 +1043,9 @@ def events(
     deporte: SportEnum = Query(...),
     dias: int = Query(default=2, ge=0, le=7),
     live: bool | None = Query(default=None),
+    fecha: date | None = Query(default=None, description="Fecha exacta YYYY-MM-DD en hora de El Salvador"),
 ):
-    result = _get_events_cached(deporte.value, dias, live)
+    result = _get_events_cached(deporte.value, dias, live, fecha)
     return {
         "fuente": result["fuente"],
         "deporte": result["deporte"],
@@ -1042,6 +1056,8 @@ def events(
         "eventos_programados": result["eventos_programados"],
         "cache_segundos": result["cache_segundos"],
         "ventana_consulta": result.get("ventana_consulta", {}),
+        "paginas_consultadas": result.get("paginas_consultadas", 1),
+        "paginacion_completa": result.get("paginacion_completa", True),
         "uso": result.get("uso", {}),
         "eventos": result["eventos"],
     }
@@ -1058,28 +1074,43 @@ def event_markets(event_id: str):
 def cartelera(
     deporte: SportEnum,
     dias: int = Query(default=2, ge=0, le=7),
+    fecha: date | None = Query(default=None, description="Fecha exacta YYYY-MM-DD en hora de El Salvador"),
 ):
-    result = _get_events_cached(deporte.value, dias)
+    today_local = datetime.now(EL_SALVADOR_TZ).date()
+    if fecha is not None:
+        if fecha < today_local or fecha > today_local + timedelta(days=2):
+            raise HTTPException(
+                status_code=400,
+                detail="La fecha debe ser hoy, mañana o pasado mañana en hora de El Salvador.",
+            )
+        result = _get_events_cached(deporte.value, 0, match_date=fecha)
+    else:
+        result = _get_events_cached(deporte.value, dias)
+
     cards = [_event_for_legacy_card(event, deporte.value) for event in result["eventos"]]
     window = result.get("ventana_consulta") or {}
-    today_local = datetime.now(EL_SALVADOR_TZ).date()
-    start = datetime.fromisoformat(window.get("fecha_inicio_local", today_local.isoformat())).date()
-    end = datetime.fromisoformat(
-        window.get("fecha_fin_local", (today_local + timedelta(days=dias)).isoformat())
-    ).date()
+    fallback_end = fecha or (today_local + timedelta(days=dias))
+    start = date.fromisoformat(window.get("fecha_inicio_local", today_local.isoformat()))
+    end = date.fromisoformat(window.get("fecha_fin_local", fallback_end.isoformat()))
     leagues = result.get("ligas_consultadas", [])
+
+    if start == end:
+        range_label = f"el {start:%d/%m/%Y}"
+    else:
+        range_label = f"del {start:%d/%m/%Y} al {end:%d/%m/%Y}"
+
     message = (
-        f"Se consultaron {', '.join(leagues)} del {start:%d/%m/%Y} al {end:%d/%m/%Y} "
-        "en hora de El Salvador. Abre el detalle para consultar los mercados y precios publicados."
+        f"Se consultaron {', '.join(leagues)} {range_label} en hora de El Salvador. "
+        "Abre el detalle para consultar los mercados y precios publicados."
         if cards else
-        f"SportsGameOdds no devolvió eventos para {', '.join(leagues)} "
-        f"entre el {start:%d/%m/%Y} y el {end:%d/%m/%Y}. "
+        f"SportsGameOdds no devolvió eventos para {', '.join(leagues)} {range_label}. "
         "También se incluyen eventos que todavía no tienen cuotas; puede que no haya partidos "
-        "en las ligas configuradas para esas fechas."
+        "en las ligas configuradas para esa fecha."
     )
     return {
         "deporte": deporte.value,
         "fuente": result["fuente"],
+        "fecha_solicitada": fecha.isoformat() if fecha else None,
         "rango_fechas": f"{start:%Y%m%d}-{end:%Y%m%d}",
         "fecha_inicio_local": start.isoformat(),
         "fecha_fin_local": end.isoformat(),
@@ -1087,6 +1118,8 @@ def cartelera(
         "dias_incluidos": window.get("dias_incluidos", dias + 1),
         "ligas_consultadas": leagues,
         "ventana_consulta": window,
+        "paginas_consultadas": result.get("paginas_consultadas", 1),
+        "paginacion_completa": result.get("paginacion_completa", True),
         "mensaje": message,
         "total_partidos_analizados": len(cards),
         "total_con_probabilidades": sum(1 for item in cards if item["modelo_disponible"]),
@@ -1095,6 +1128,7 @@ def cartelera(
         "uso": result.get("uso", {}),
         "cartelera": cards,
     }
+
 
 
 @app.get("/equipos/{deporte}", tags=["Históricos"])
