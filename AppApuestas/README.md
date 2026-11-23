@@ -115,6 +115,79 @@ La vista de Research incluye mapas de remates, xG acumulado, mapas de actividad,
 
 La revisión comparativa de repositorios, herramientas y licencias se encuentra en [ANALISIS_HERRAMIENTAS.md](ANALISIS_HERRAMIENTAS.md). Incluye recomendaciones para fútbol, NBA, NFL y MLB y una lista de fuentes que no conviene automatizar sin permiso.
 
+## Investigación NBA (incluida en producción)
+
+La aplicación incluye un panel NBA separado del análisis de fútbol. Usa `nba_api`, ya incluido en los requisitos obligatorios, y consulta NBA.com Stats sin API key. Las consultas son bajo demanda y se cachean durante cinco minutos.
+
+Endpoints:
+- `GET /api/v1/research/nba/status`: disponibilidad del conector.
+- `GET /api/v1/research/nba/scoreboard?fecha=YYYY-MM-DD`: cartelera, marcadores y líderes.
+- `GET /api/v1/research/nba/teams`: catálogo de franquicias actuales.
+- `GET /api/v1/research/nba/teams/{team_id}/roster?season=YYYY-YY`: plantilla de la temporada seleccionada.
+- `GET /api/v1/research/nba/games/{game_id}/shots?season=YYYY-YY&team_id=0&player_id=0`: tiros con coordenadas, distancia, periodo y resultado.
+- `GET /api/v1/research/nba/logs?season=YYYY-YY&entity=T|P`: game logs por equipo o jugador.
+
+El panel permite seleccionar el partido, filtrar el mapa por local/visitante o ID de jugador y consultar roster e historial. Si no se especifica temporada, se calcula la temporada NBA vigente. Las coordenadas LOC_X/LOC_Y son coordenadas nativas de tiros NBA y nunca se mezclan con el campo de fútbol. NBA.com puede limitar peticiones o cambiar endpoints; un fallo de origen se informa como error del proveedor, no se completa con datos inventados.
+
+## Investigación NFL (conector opcional)
+
+Instalar `requirements-optional.txt` en un entorno destinado a NFL para habilitar `nflreadpy`. No se instala durante el despliegue base de Render.
+
+Endpoints:
+- `GET /api/v1/research/nfl/status`
+- `GET /api/v1/research/nfl/schedule?season=2026&week=10`
+- `GET /api/v1/research/nfl/games/{game_id}/pbp?season=2026&limit=1500`
+- `GET /api/v1/research/nfl/rosters?season=2026&week=10`
+- `GET /api/v1/research/nfl/injuries?season=2026`
+- `GET /api/v1/research/nfl/depth-charts?season=2026`
+
+El PBP requiere el game_id y limita el número de jugadas devueltas. La cobertura de lesiones, depth charts, snap counts y Next Gen Stats depende de las tablas publicadas en nflverse. El paquete se declara experimental. La mayoría de los datos son CC BY 4.0; FTN charting es CC BY-SA 4.0. Verifica la licencia del dataset concreto antes de redistribuirlo.
+
+## Investigación MLB / Statcast (conector opcional)
+
+Instalar `requirements-optional.txt` en el entorno MLB para habilitar `pybaseball`.
+
+Endpoints:
+- `GET /api/v1/research/mlb/status`
+- `GET /api/v1/research/mlb/statcast?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD`
+- Filtros opcionales: `batter_id` o `pitcher_id` (uno por consulta).
+- La ventana está limitada a tres días por solicitud y a 5.000 registros de respuesta.
+
+Statcast puede incluir tipo de lanzamiento, velocidad, spin, localización, velocidad de salida, ángulo de bateo y expected statistics cuando se publican. pybaseball es un scraper de terceros; la licencia MIT del código no concede automáticamente derechos sobre Baseball Savant, FanGraphs o Baseball Reference. No automatizar ni redistribuir hasta revisar sus condiciones aplicables.
+
+## Historial abierto de resultados de fútbol (opcional)
+
+Se añade un adaptador para el parquet `schochastics/football-data`, publicado bajo ODC-BY. El repositorio anuncia 1.237.935 partidos de 207 ligas domésticas y 20 torneos internacionales entre 1888 y 2023. Contiene marcadores y nombres/identificadores de clubes, pero no xG, remates ni eventos.
+
+Para habilitarlo:
+1. Instala `duckdb` desde `requirements-optional.txt`.
+2. Ejecuta desde `AppApuestas`: `python scripts/download_open_football_results.py`.
+3. En Render, asigna `FOOTBALL_OPEN_DATA_PATH` a una ubicación persistente donde exista `games.parquet`. En el plan gratuito sin disco persistente, no actives esta fuente en producción.
+4. Consulta `GET /api/v1/research/football/open-data/status` y `GET /api/v1/research/football/open-data/team-history?team_name=Arsenal&limit=10`.
+5. Usa `team_ident` cuando el resultado indique varias identidades con el mismo nombre.
+
+El endpoint aplica una fecha de corte estricta anterior al partido objetivo y avisa que la identidad de equipos puede variar en periodos históricos. La atribución ODC-BY se incluye en las respuestas.
+
+## Historial persistente opcional en Supabase
+
+La aplicación incluye un adaptador REST que guarda snapshots diarios de análisis por proveedor, partido y tipo. El almacenamiento está desactivado hasta configurar una base Supabase que se asigne expresamente a AppApuestas.
+
+1. En el proyecto Supabase elegido para AppApuestas, ejecuta `sql/001_research_snapshots.sql`.
+2. En Render agrega `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` y, opcionalmente, `SUPABASE_RESEARCH_TABLE`.
+3. Nunca pongas la service-role key en Flutter, HTML, JavaScript o GitHub.
+4. Comprueba `GET /api/v1/research/storage/status`.
+5. Los análisis de PitchAPI guardan un snapshot diario al consultar el partido. Para consultar el historial usa `GET /api/v1/research/storage/history/{match_id}?provider=pitchapi`.
+
+No se seleccionó ni modificó ninguna base Supabase existente. Hay que elegir explícitamente la base de AppApuestas antes de activar las variables. El adaptador no rompe la respuesta de análisis si el storage no está configurado o falla temporalmente.
+
+## Seguridad de operaciones administrativas
+
+`POST /actualizar-datos` queda desactivado si no existe `ADMIN_API_KEY`. Para habilitarlo, crea una clave larga aleatoria en Render y envíala en el encabezado `X-Admin-Key`. No configures esa clave en el cliente web ni en la app móvil.
+
+## Paquetes de investigación offline
+
+`requirements-optional.txt` contiene `nflreadpy`, `pybaseball`, `mplsoccer`, `kloppy`, `socceraction`, `pyarrow` y `duckdb`. No se instalan en el servidor principal automáticamente: mplsoccer/kloppy/socceraction se reservan para informes y normalización offline; el cliente de producción sigue usando datos de proveedores verificables y la UI propia.
+
 ### Versión
 
-API backend 1.0.9 o posterior.
+API backend 1.1.0 o posterior.
