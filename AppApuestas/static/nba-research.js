@@ -146,6 +146,61 @@
     }catch(error){$("nba-shot-output").innerHTML="";status("No se pudo consultar el mapa de tiros: "+error.message,true);}
     finally{$("nba-shots").disabled=false;}
   }
+  async function loadBoxscore(){
+    if(!state.selected){status("Selecciona un partido NBA primero.",true);return;}
+    const id=gameInfo(state.selected).id;
+    status("Consultando box score tradicional, avanzado y tracking NBA…");
+    try{
+      const data=await get("/api/v1/research/nba/games/"+encodeURIComponent(id)+"/boxscore");
+      const playerCols=["firstName","familyName","teamTricode","position","minutes","points","reboundsTotal","assists","steals","blocks","turnovers","plusMinusPoints"];
+      const advancedCols=["firstName","familyName","teamTricode","minutes","offensiveRating","defensiveRating","netRating","assistPercentage","trueShootingPercentage","usagePercentage","pace","possessions","PIE"];
+      const trackingCols=["firstName","familyName","teamTricode","minutes","speed","distance","touches","passes","assists","contestedFieldGoalsMade","defendedAtRimFieldGoalsMade"];
+      $("nba-extra-output").innerHTML=
+        '<section class="research-card"><h3>Box score tradicional</h3>'+renderLogs({registros:data.jugadores})+'</section>'+
+        '<section class="research-card"><h3>Box score avanzado</h3>'+renderGeneric(data.jugadores_avanzado,advancedCols)+'</section>'+
+        '<section class="research-card"><h3>Player tracking</h3>'+renderGeneric(data.tracking_jugadores,trackingCols)+'</section>'+
+        '<section class="research-card"><h3>Resumen por equipo</h3>'+renderGeneric(data.equipos,["teamName","teamTricode","minutes","points","reboundsTotal","assists","steals","blocks","turnovers","plusMinusPoints"])+'</section>'+
+        (data.advertencias&&data.advertencias.length?'<p class="research-muted">'+esc(data.advertencias.join(" · "))+'</p>':"");
+      status("Box score cargado: "+data.jugadores.length+" líneas de jugadores · "+data.advertencias.length+" advertencias opcionales.");
+    }catch(error){$("nba-extra-output").innerHTML="";status("No se pudo consultar el box score: "+error.message,true);}
+  }
+  function renderGeneric(rows,columns){
+    if(!Array.isArray(rows)||!rows.length)return '<div class="pitch-empty">Bloque no publicado por NBA.com.</div>';
+    const available=columns.filter(c=>rows.some(r=>r[c]!=null));
+    return '<div class="research-table-scroll"><table class="research-table"><thead><tr>'+available.map(c=>'<th>'+esc(c)+'</th>').join("")+'</tr></thead><tbody>'+
+      rows.slice(0,40).map(r=>'<tr>'+available.map(c=>'<td>'+esc(r[c]??"—")+'</td>').join("")+'</tr>').join("")+'</tbody></table></div>';
+  }
+  async function loadPlayByPlay(){
+    if(!state.selected){status("Selecciona un partido NBA primero.",true);return;}
+    const id=gameInfo(state.selected).id;
+    status("Consultando jugada por jugada NBA…");
+    try{
+      const data=await get("/api/v1/research/nba/games/"+encodeURIComponent(id)+"/play-by-play?limit=1500");
+      const rows=Array.isArray(data.jugadas)?data.jugadas:[];
+      const columns=["actionNumber","clock","period","teamTricode","playerName","actionType","subType","description","shotDistance","shotResult","pointsTotal","scoreHome","scoreAway"];
+      $("nba-extra-output").innerHTML='<section class="research-card"><h3>Play-by-play NBA · '+esc(id)+'</h3>'+renderGeneric(rows,columns)+'</section>';
+      status(rows.length+" acciones NBA devueltas.");
+    }catch(error){$("nba-extra-output").innerHTML="";status("No se pudo consultar el play-by-play: "+error.message,true);}
+  }
+  async function loadSeasonStats(){
+    const params=new URLSearchParams({
+      season:$("nba-season").value||currentSeason(),
+      entity:$("nba-season-entity").value,
+      measure_type:$("nba-measure-type").value,
+      per_mode:$("nba-per-mode").value,
+      limit:"1000"
+    });
+    status("Consultando estadísticas NBA de temporada…");
+    try{
+      const data=await get("/api/v1/research/nba/season-stats?"+params.toString());
+      const rows=Array.isArray(data.estadisticas)?data.estadisticas:[];
+      const cols=data.entity==="player"
+        ?["PLAYER_NAME","TEAM_ABBREVIATION","GP","W_PCT","MIN","PTS","REB","AST","STL","BLK","FG_PCT","FG3_PCT","FT_PCT","PLUS_MINUS"]
+        :["TEAM_NAME","GP","W","L","W_PCT","MIN","PTS","REB","AST","STL","BLK","FG_PCT","FG3_PCT","PLUS_MINUS"];
+      $("nba-extra-output").innerHTML='<section class="research-card"><h3>NBA · '+esc(data.entity)+' · '+esc(data.measure_type)+' · '+esc(data.per_mode)+'</h3>'+renderGeneric(rows,cols)+'</section>';
+      status(rows.length+" filas de estadísticas NBA de temporada.");
+    }catch(error){$("nba-extra-output").innerHTML="";status("No se pudieron consultar las estadísticas de temporada: "+error.message,true);}
+  }
   function renderLogs(data){
     const rows=Array.isArray(data.registros)?data.registros:[];
     if(!rows.length)return '<div class="pitch-empty">No hay game logs para estos filtros.</div>';
@@ -202,6 +257,9 @@
     $("nba-load").addEventListener("click",loadScoreboard);
     $("nba-game").addEventListener("change",selectGame);
     $("nba-shots").addEventListener("click",loadShots);
+    $("nba-boxscore").addEventListener("click",loadBoxscore);
+    $("nba-pbp").addEventListener("click",loadPlayByPlay);
+    $("nba-season-stats").addEventListener("click",loadSeasonStats);
     $("nba-logs").addEventListener("click",loadLogs);
     $("nba-roster").addEventListener("click",loadRoster);
     $("nba-log-entity").addEventListener("change",()=>{ $("nba-log-label").textContent=$("nba-log-entity").value==="P"?"ID jugador / Player logs":"Equipo / Team logs";});
