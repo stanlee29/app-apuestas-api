@@ -103,14 +103,23 @@ class ResearchStorage:
         return data if isinstance(data, list) else []
 
     @staticmethod
-    def _team_or_filter(team_name: str) -> str:
-        team = " ".join(str(team_name or "").split())
-        # Only team-name characters are accepted; quote the value for PostgREST
-        # so a name cannot inject another filter into the OR expression.
-        if not team or len(team) > 100 or not re.fullmatch(r"[\w\s.\-'’&]+", team, flags=re.UNICODE):
-            raise ValueError("Nombre de equipo inválido.")
-        quoted = team.replace("\\", "\\\\").replace('"', '\\"')
-        return f'(home_team.eq."{quoted}",away_team.eq."{quoted}")'
+    def _team_or_filter(team_names: str | list[str] | tuple[str, ...]) -> str:
+        values = [team_names] if isinstance(team_names, str) else list(team_names)
+        cleaned: list[str] = []
+        for value in values:
+            team = " ".join(str(value or "").split())
+            # Validate every candidate before building a PostgREST OR filter.
+            if not team or len(team) > 100 or not re.fullmatch(r"[\w\s.\-'’&]+", team, flags=re.UNICODE):
+                raise ValueError("Nombre de equipo inválido.")
+            if team.casefold() not in {item.casefold() for item in cleaned}:
+                cleaned.append(team)
+        if not cleaned or len(cleaned) > 8:
+            raise ValueError("Lista de nombres de equipo inválida.")
+        clauses = []
+        for team in cleaned:
+            quoted = team.replace("\\", "\\\\").replace('"', '\\"')
+            clauses.extend((f'home_team.eq."{quoted}"', f'away_team.eq."{quoted}"'))
+        return "(" + ",".join(clauses) + ")"
 
     @staticmethod
     def _number(value: Any) -> float | None:
@@ -186,9 +195,33 @@ class ResearchStorage:
         before_date: str | None = None,
         limit: int = 5,
     ) -> dict[str, Any]:
-        team_filter = self._team_or_filter(team_name)
+        requested_team = " ".join(str(team_name or "").split())
+        if not requested_team:
+            raise ValueError("Nombre de equipo inválido.")
         safe_limit = max(1, min(20, int(limit)))
         cutoff = date.fromisoformat(before_date).isoformat() if before_date else date.today().isoformat()
+
+        # Resolve known provider aliases (for example canonical GanaPlay name
+        # to FotMob display name) before searching archives with exact names.
+        identity_rows = self._get_rows(
+            "team_identity_map",
+            {
+                "select": "provider,provider_team_id,canonical_team_name,provider_team_name,confidence",
+                "or": (
+                    "(canonical_team_name.eq." + '"' + requested_team + '"' +
+                    ",provider_team_name.eq." + '"' + requested_team + '"' + ")"
+                ),
+                "confidence": "gte.0.90",
+                "limit": "8",
+            },
+            "el mapa de identidades de equipos",
+        )
+        candidates = [requested_team]
+        for identity in identity_rows:
+            for candidate in (identity.get("canonical_team_name"), identity.get("provider_team_name")):
+                if candidate and str(candidate).casefold() not in {item.casefold() for item in candidates}:
+                    candidates.append(str(candidate))
+        team_filter = self._team_or_filter(candidates)
 
         result_params = {
             "select": "source,competition_name,season,match_date,home_team,away_team,home_goals,away_goals,ht_home_goals,ht_away_goals,stats",
@@ -259,7 +292,8 @@ class ResearchStorage:
                 "temporada": row.get("season"),
                 "fecha": row.get("match_date"),
                 "condicion": "local" if is_home else "visitante",
-                "equipo": team_name,
+                "equipo": requested_team,
+                "nombre_en_fuente": home_name if is_home else away_name,
                 "rival": away_team if is_home else home_team,
                 "marcador": f"{int(own_score)}-{int(opp_score)}" if own_score is not None and opp_score is not None else None,
                 "resultado": result,
@@ -282,7 +316,16 @@ class ResearchStorage:
 
         advanced = []
         for row in feature_rows:
-            is_home = str(row.get("home_team") or "").casefold() == team_name.strip().casefold()
+            home_name = str(row.get("home_team") or "")
+            away_name = str(row.get("away_team") or "")
+            matched_names = {candidate.casefold() for candidate in candidates}
+            is_home = home_name.casefold() in matched_names
+            is_away = away_name.casefold() in matched_names
+            if not is_home and not is_away:
+                continue
+            if is_home and is_away:
+                # Ambiguous same-name fixture: do not assign arbitrary venue stats.
+                continue
             advanced.append({
                 "fuente": row.get("source"),
                 "licencia": row.get("source_license"),
@@ -306,7 +349,9 @@ class ResearchStorage:
             })
 
         return {
-            "equipo": team_name,
+            "equipo": requested_team,
+            "nombres_alternativos": candidates[1:],
+            "identidades_verificadas": identity_rows,
             "antes_de": cutoff,
             "fuente_resultados": "Football-Data.co.uk",
             "partidos": matches,
