@@ -98,6 +98,51 @@ class SportsGameOddsTests(unittest.TestCase):
         self.assertEqual(window["starts_after"], "2026-11-18T06:00:00Z")
         self.assertEqual(window["starts_before"], "2026-11-19T06:00:00Z")
 
+    def test_account_usage_sanitizes_identifiers(self):
+        settings = ProviderSettings(api_key="test-key")
+        client = SportsGameOddsClient(settings)
+
+        class Response:
+            status_code = 200
+            def raise_for_status(self):
+                return None
+            def json(self):
+                return {
+                    "success": True,
+                    "data": {
+                        "keyID": "must-not-escape",
+                        "customerID": "must-not-escape",
+                        "email": "must-not-escape",
+                        "tier": "amateur",
+                        "isActive": True,
+                        "rateLimits": {
+                            "per-month": {
+                                "maxEntitiesPerInterval": 2500,
+                                "currentIntervalEntities": 120,
+                            }
+                        },
+                    },
+                }
+
+        with patch.object(client.session, "get", return_value=Response()) as request:
+            usage = client.account_usage()
+        self.assertEqual(usage["tier"], "amateur")
+        self.assertTrue(usage["is_active"])
+        self.assertEqual(usage["rate_limits"]["per-month"]["currentIntervalEntities"], 120)
+        self.assertNotIn("keyID", usage)
+        self.assertEqual(request.call_args.args[0], f"{settings.base_url}/account/usage")
+
+    def test_get_events_accepts_safe_custom_limit(self):
+        client = SportsGameOddsClient(ProviderSettings(api_key="test-key", leagues={"nba": ("NBA",)}))
+        with patch.object(client, "_get_events", return_value=[]) as request:
+            client.get_events("nba", days=0, limit=4)
+        self.assertEqual(request.call_args.args[0]["limit"], 4)
+
+    def test_get_events_rejects_limit_out_of_range(self):
+        client = SportsGameOddsClient(ProviderSettings(api_key="test-key", leagues={"nba": ("NBA",)}))
+        with self.assertRaises(ProviderConfigurationError):
+            client.get_events("nba", limit=101)
+
     def test_clave_obligatoria(self):
         with patch.dict(os.environ, {}, clear=True):
             with self.assertRaises(ProviderConfigurationError):
