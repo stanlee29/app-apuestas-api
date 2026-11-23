@@ -19,7 +19,33 @@ import requests
 BASE_URL = "https://api.pitchapi.dev/v1"
 _CACHE: dict[str, tuple[float, Any]] = {}
 _CACHE_LOCK = threading.Lock()
-CACHE_SECONDS = max(30, int(os.getenv("PITCHAPI_CACHE_SECONDS", "300")))
+MAX_CACHE_ENTRIES = 1200
+try:
+    CACHE_SECONDS = max(30, int(os.getenv("PITCHAPI_CACHE_SECONDS", "300")))
+except (TypeError, ValueError):
+    CACHE_SECONDS = 300
+
+
+def _cache_read(key: str, now: float, ttl: int) -> tuple[bool, Any]:
+    if ttl <= 0:
+        return False, None
+    with _CACHE_LOCK:
+        cached = _CACHE.get(key)
+        if cached is None:
+            return False, None
+        if now - cached[0] >= ttl:
+            _CACHE.pop(key, None)
+            return False, None
+        return True, cached[1]
+
+
+def _cache_write(key: str, value: Any, now: float, ttl: int) -> None:
+    if ttl <= 0:
+        return
+    with _CACHE_LOCK:
+        _CACHE[key] = (now, value)
+        while len(_CACHE) > MAX_CACHE_ENTRIES:
+            _CACHE.pop(next(iter(_CACHE)), None)
 
 
 class PitchAPIError(RuntimeError):
@@ -64,10 +90,9 @@ class PitchAPIClient:
         cache_key = clean_path + repr(query)
         now = time.monotonic()
         ttl = CACHE_SECONDS if cache_seconds is None else max(0, cache_seconds)
-        with _CACHE_LOCK:
-            cached = _CACHE.get(cache_key)
-            if ttl > 0 and cached and now - cached[0] < ttl:
-                return cached[1]
+        found, cached_value = _cache_read(cache_key, now, ttl)
+        if found:
+            return cached_value
 
         try:
             response = self.session.get(
@@ -79,6 +104,9 @@ class PitchAPIClient:
             raise PitchAPIError(f"No fue posible conectar con PitchAPI: {exc}") from exc
 
         if response.status_code == 404 and optional:
+            # 404 opcional incluye ANALYTICS_UNAVAILABLE: el partido existe,
+            # pero no dispone de feed avanzado. Se guarda para evitar reintentos.
+            _cache_write(cache_key, None, now, ttl)
             return None
         if response.status_code == 401:
             raise PitchAPIError(
@@ -126,9 +154,7 @@ class PitchAPIClient:
             )
 
         data = payload.get("data", payload)
-        if ttl > 0:
-            with _CACHE_LOCK:
-                _CACHE[cache_key] = (now, data)
+        _cache_write(cache_key, data, now, ttl)
         return data
 
     def list_leagues(self) -> list[dict[str, Any]]:
@@ -174,72 +200,119 @@ class PitchAPIClient:
     def match_analysis(self, match_id: str) -> dict[str, Any]:
         self._validate_match_id(match_id)
         encoded = quote(match_id, safe="")
+        # La ficha del partido es obligatoria. El resto de bloques son opcionales:
+        # una liga/partido puede tener marcador sin disponer de eventos avanzados.
         match = self._get(f"/matches/{encoded}")
-        shots_data = self._get(f"/matches/{encoded}/shots", optional=True) or {}
-        stats_data = self._get(f"/matches/{encoded}/stats", optional=True) or {}
-        players_data = self._get(f"/matches/{encoded}/players", optional=True) or {}
-        h2h_data = self._get(f"/matches/{encoded}/h2h", optional=True) or {}
-        heatmaps_data = self._get(
-            f"/matches/{encoded}/heatmaps", {"frame": "home_ltr"}, optional=True
-        ) or {}
-        advanced_data = self._get(f"/matches/{encoded}/advanced", optional=True) or {}
-        advanced_players_data = self._get(f"/matches/{encoded}/advanced/players", optional=True) or {}
-        network_data = self._get(f"/matches/{encoded}/advanced/network", optional=True) or {}
-        lineups_data = self._get(f"/matches/{encoded}/lineups", optional=True) or {}
-        events_data = self._get(f"/matches/{encoded}/events", optional=True) or {}
-        momentum_data = self._get(f"/matches/{encoded}/momentum", optional=True) or {}
+        warnings: list[dict[str, str]] = []
+
+        def optional_block(name: str, path: str, params: dict[str, Any] | None = None) -> Any:
+            try:
+                return self._get(path, params, optional=True) or {}
+            except PitchAPIError as exc:
+                # No ocultamos la ficha obligatoria; preservamos el informe principal
+                # ante límites/errores temporales en los bloques suplementarios.
+                if exc.code in {"PITCHAPI_UNAUTHORIZED", "PITCHAPI_NOT_CONFIGURED"}:
+                    raise
+                warnings.append({
+                    "bloque": name,
+                    "codigo": exc.code,
+                    "mensaje": str(exc),
+                })
+                return {}
+
+        shots_data = optional_block("remates", f"/matches/{encoded}/shots")
+        stats_data = optional_block("estadisticas_equipo", f"/matches/{encoded}/stats")
+        players_data = optional_block("estadisticas_jugadores", f"/matches/{encoded}/players")
+        h2h_data = optional_block("h2h", f"/matches/{encoded}/h2h")
+        heatmaps_data = optional_block(
+            "mapas_calor", f"/matches/{encoded}/heatmaps", {"frame": "home_ltr"}
+        )
+        advanced_data = optional_block("analitica_avanzada", f"/matches/{encoded}/advanced")
+        advanced_players_data = optional_block(
+            "analitica_avanzada_jugadores", f"/matches/{encoded}/advanced/players"
+        )
+        network_data = optional_block("red_pases", f"/matches/{encoded}/advanced/network")
+        lineups_data = optional_block("alineaciones", f"/matches/{encoded}/lineups")
+        events_data = optional_block("eventos", f"/matches/{encoded}/events")
+        momentum_data = optional_block("momentum", f"/matches/{encoded}/momentum")
 
         periods = shots_data.get("periods", []) if isinstance(shots_data, dict) else []
         shots: list[dict[str, Any]] = []
         for period in periods if isinstance(periods, list) else []:
-            for shot in period.get("shots", []) if isinstance(period, dict) else []:
-                if isinstance(shot, dict):
-                    item = dict(shot)
-                    item.setdefault("period", period.get("period"))
-                    shots.append(item)
+            if not isinstance(period, dict):
+                continue
+            for shot in period.get("shots", []) if isinstance(period.get("shots"), list) else []:
+                if not isinstance(shot, dict):
+                    continue
+                item = dict(shot)
+                item.setdefault("period", period.get("period"))
+                # Coordenadas documentadas en metros (105 x 68), con dirección
+                # normalizada por PitchAPI: no invertir el visitante en el cliente.
+                for axis, upper in (("x", 105.0), ("y", 68.0)):
+                    try:
+                        value = float(item[axis]) if item.get(axis) is not None else None
+                    except (TypeError, ValueError):
+                        value = None
+                    item[axis] = value if value is not None and 0 <= value <= upper else None
+                try:
+                    item["expected_goals"] = (
+                        float(item["expected_goals"])
+                        if item.get("expected_goals") is not None else None
+                    )
+                except (TypeError, ValueError):
+                    item["expected_goals"] = None
+                shots.append(item)
 
         home = match.get("home_team") or {}
         away = match.get("away_team") or {}
         home_id, away_id = home.get("id"), away.get("id")
 
         def summarize_team(team_id: Any) -> dict[str, Any]:
-            team_shots = [s for s in shots if s.get("team_id") == team_id]
+            team_shots = [
+                shot for shot in shots
+                if str(shot.get("team_id") or "") == str(team_id or "")
+            ]
             xg_values = [
-                float(s["expected_goals"])
-                for s in team_shots
-                if isinstance(s.get("expected_goals"), (int, float))
+                shot["expected_goals"] for shot in team_shots
+                if isinstance(shot.get("expected_goals"), (int, float))
             ]
             return {
                 "remates": len(team_shots),
-                "remates_a_puerta": sum(1 for s in team_shots if s.get("is_on_target") is True),
-                "goles_en_remates": sum(1 for s in team_shots if str(s.get("event_type", "")).casefold() == "goal"),
+                "remates_a_puerta": sum(1 for shot in team_shots if shot.get("is_on_target") is True),
+                "goles_en_remates": sum(
+                    1 for shot in team_shots
+                    if str(shot.get("event_type") or "").casefold() == "goal"
+                ),
                 "xg": round(sum(xg_values), 4) if xg_values else None,
                 "xg_por_remate": round(sum(xg_values) / len(xg_values), 4) if xg_values else None,
+                "remates_con_xg": len(xg_values),
             }
 
+        # Solo mostramos el periodo All como estadísticas completas. Si el proveedor
+        # no lo publica, no etiquetamos la primera mitad como si fuese el partido entero.
         stats: list[dict[str, Any]] = []
         periods_stats = stats_data.get("periods", []) if isinstance(stats_data, dict) else []
-        if isinstance(periods_stats, list):
-            # El endpoint entrega grupos por periodo ("All", "FirstHalf", "SecondHalf").
-            # Priorizamos "All" para no duplicar las métricas de las dos mitades.
-            all_period = next(
-                (period for period in periods_stats if isinstance(period, dict) and period.get("period") == "All"),
-                periods_stats[0] if periods_stats else {},
-            )
-            for group in all_period.get("groups", []) if isinstance(all_period, dict) else []:
-                if not isinstance(group, dict):
+        all_period = next(
+            (
+                period for period in periods_stats
+                if isinstance(period, dict) and str(period.get("period") or "").casefold() == "all"
+            ),
+            None,
+        ) if isinstance(periods_stats, list) else None
+        for group in all_period.get("groups", []) if isinstance(all_period, dict) else []:
+            if not isinstance(group, dict):
+                continue
+            for item in group.get("items", []) if isinstance(group.get("items"), list) else []:
+                if not isinstance(item, dict):
                     continue
-                for item in group.get("items", []):
-                    if not isinstance(item, dict):
-                        continue
-                    stats.append({
-                        "grupo": group.get("group_name"),
-                        "key": item.get("key"),
-                        "title": item.get("title"),
-                        "home": item.get("home"),
-                        "away": item.get("away"),
-                        "format_type": item.get("format_type"),
-                    })
+                stats.append({
+                    "grupo": group.get("group_name"),
+                    "key": item.get("key"),
+                    "title": item.get("title"),
+                    "home": item.get("home"),
+                    "away": item.get("away"),
+                    "format_type": item.get("format_type"),
+                })
 
         player_stats = (
             players_data if isinstance(players_data, list)
@@ -251,6 +324,33 @@ class PitchAPIClient:
             else advanced_players_data.get("players", []) if isinstance(advanced_players_data, dict)
             else []
         )
+        heatmap_teams = heatmaps_data.get("teams", []) if isinstance(heatmaps_data, dict) else []
+        heatmap_players = heatmaps_data.get("players", []) if isinstance(heatmaps_data, dict) else []
+        pass_networks = network_data.get("networks", []) if isinstance(network_data, dict) else []
+        advanced_teams = advanced_data.get("teams", []) if isinstance(advanced_data, dict) else []
+        events = events_data if isinstance(events_data, list) else (
+            events_data.get("events", []) if isinstance(events_data, dict) else []
+        )
+        momentum_points = momentum_data if isinstance(momentum_data, list) else (
+            momentum_data.get("points", []) if isinstance(momentum_data, dict) else []
+        )
+
+        availability = {
+            "remates_xg": bool(shots),
+            "estadisticas_equipo": bool(stats),
+            "estadisticas_jugadores": bool(player_stats),
+            "h2h": bool(h2h_data.get("recent_matches")) if isinstance(h2h_data, dict) else bool(h2h_data),
+            "mapas_calor": bool(heatmap_teams or heatmap_players),
+            "analitica_avanzada": bool(advanced_teams),
+            "analitica_avanzada_jugadores": bool(advanced_player_stats),
+            "red_pases": bool(pass_networks),
+            "alineaciones": bool(
+                lineups_data.get("home") or lineups_data.get("away")
+            ) if isinstance(lineups_data, dict) else bool(lineups_data),
+            "eventos": bool(events),
+            "momentum": bool(momentum_points),
+        }
+        not_available = [name for name, available in availability.items() if not available]
 
         return {
             "fuente": "PitchAPI",
@@ -262,6 +362,7 @@ class PitchAPIClient:
             "remates": shots,
             "estadisticas_equipo": stats,
             "estadisticas_equipo_raw": stats_data,
+            "estadisticas_por_tiempo": stats_data.get("stats_halves", {}) if isinstance(stats_data, dict) else {},
             "estadisticas_jugadores": player_stats,
             "analitica_avanzada_jugadores": advanced_player_stats,
             "h2h": h2h_data,
@@ -269,24 +370,16 @@ class PitchAPIClient:
             "red_pases": network_data,
             "alineaciones": lineups_data,
             "analitica_avanzada": advanced_data,
-            "eventos": events_data.get("events", []) if isinstance(events_data, dict) else [],
-            "momentum": momentum_data.get("points", []) if isinstance(momentum_data, dict) else [],
-            "disponibilidad": {
-                "remates_xg": bool(shots),
-                "estadisticas_equipo": bool(stats),
-                "estadisticas_jugadores": bool(players_data),
-                "h2h": bool(h2h_data),
-                "mapas_calor": bool(heatmaps_data),
-                "analitica_avanzada": bool(advanced_data),
-                "analitica_avanzada_jugadores": bool(advanced_players_data),
-                "red_pases": bool(network_data),
-                "alineaciones": bool(lineups_data),
-                "eventos": bool(events_data),
-                "momentum": bool(momentum_data),
-            },
+            "eventos": events,
+            "momentum": momentum_points,
+            "disponibilidad": availability,
+            "bloques_sin_cobertura": not_available,
+            "advertencias": warnings,
+            "consultado_en": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "nota": (
-                "Las métricas xG y los datos de remates corresponden al modelo de PitchAPI. "
-                "No deben mezclarse como si fueran iguales con xG calculados por otros proveedores."
+                "xG procede del modelo de PitchAPI. No mezcles xG, xT o VAEP de proveedores "
+                "distintos como si fueran la misma métrica. ANALYTICS_UNAVAILABLE significa "
+                "que existe el partido pero no fue calificado con feed de eventos."
             ),
         }
 
