@@ -16,6 +16,28 @@ La cobertura gratuita incluye ocho ligas: NFL, NBA, MLB, NHL, NCAA Football, NCA
 
 GanaPlay no está conectado directamente en este repositorio. El feed exportable de Altenar que se ha podido documentar es B2B y requiere un importer ID asignado al operador y autorización de IP. La integración directa necesita las credenciales y datos de acceso oficiales del operador; el backend no simula ni extrae cuotas de una sesión privada.
 
+## Recolector público de GanaPlay (solo lectura)
+
+Se añadió un observador independiente de la API principal para inspeccionar la cartelera pública que carga el navegador:
+
+```bash
+pip install -r requirements-scraper.txt
+python -m playwright install chromium
+python ganaplay_public_feed.py --days 2 --wait 15 --output ganaplay_public_feed.json
+```
+
+El script abre las páginas públicas de GanaPlay sin iniciar sesión. Solo permite solicitudes GET, HEAD y OPTIONS; bloquea POST, PUT, PATCH y DELETE. No pulsa botones, no abre el boleto y no envía apuestas. Captura respuestas JSON del navegador y normaliza los campos que reconoce como eventos, mercados y cuotas decimales.
+
+La primera captura está diseñada como una prueba de descubrimiento. Si el widget requiere autenticación, geolocalización, consentimiento adicional o navegación no disponible de forma anónima, el recolector lo informará y no inventará eventos. La completitud se mantiene como no verificada hasta confirmar que todas las disciplinas y páginas se han cargado.
+
+En GitHub Actions está disponible el workflow **Probe GanaPlay public feed (read-only)**. Ejecuta una captura de prueba y publica el JSON como artefacto por tres días. Todavía no hay ejecución programada ni escritura en Supabase: primero hay que validar que la captura anónima contiene los partidos y precios esperados.
+
+GanaPlay tiene una asociación pública con Altenar. El manual de exportación de Altenar localizado describe un feed B2B para operadores, con importer ID asignado y lista blanca de IP. Este observador no usa ese feed privado ni intenta eludir sus controles.
+
+## Polymarket como fuente complementaria
+
+Polymarket puede aportar precios de contratos y probabilidades implícitas de mercados que sí estén listados allí. No es una cartelera universal ni sustituye las cuotas decimales de GanaPlay. La API correcta de descubrimiento es https://gamma-api.polymarket.com/events, no la página HTML de Polymarket. Sus precios de resultados se expresan como valores de mercado/probabilidad (aprox. 0–1), no como cuotas decimales de una casa de apuestas. Mantenerlos separados permite comparar fuentes sin confundir sus significados.
+
 ## Variables
 
 Consulta \`.env.example\`. No guardes claves reales en este repositorio.
