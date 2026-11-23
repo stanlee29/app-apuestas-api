@@ -492,6 +492,54 @@
     return '<div class="pitch-two-col">' + sideCard(home,homeId) + sideCard(away,awayId) + '</div>';
   }
 
+  function renderStoredHistoryPanel(persistencia) {
+    if (persistencia && persistencia.guardado === true) {
+      return '<section class="research-card"><h3>Historial persistente</h3><p class="research-muted">Este análisis se guardó en Supabase. Puedes consultar snapshots anteriores del mismo partido.</p><button type="button" class="research-button secondary" id="pitch-history-load">Consultar análisis guardados</button><div id="pitch-history-output" class="research-output"></div></section>';
+    }
+    return '<section class="research-card"><h3>Historial persistente</h3><div class="pitch-empty">Supabase todavía no está configurado para AppApuestas. El análisis actual se muestra normalmente, pero no se conserva después de reiniciar Render.</div></section>';
+  }
+  async function loadStoredHistory(matchId) {
+    const button = $("pitch-history-load");
+    const output = $("pitch-history-output");
+    if (!button || !output) return;
+    const old = button.textContent;
+    button.disabled = true;
+    button.textContent = "Consultando historial…";
+    try {
+      const data = await get(
+        "/api/v1/research/storage/history/" + encodeURIComponent(matchId) +
+        "?provider=pitchapi&limit=30"
+      );
+      const rows = Array.isArray(data.historial) ? data.historial : [];
+      if (!rows.length) {
+        output.innerHTML = '<div class="pitch-empty">Todavía no hay snapshots anteriores guardados para este partido.</div>';
+        return;
+      }
+      const body = rows.map(row => {
+        const payload = row.payload || {};
+        const metrics = payload.metricas_calculadas_desde_remates || {};
+        const coverage = payload.disponibilidad || {};
+        const localXg = metrics.local && metrics.local.xg;
+        const awayXg = metrics.visitante && metrics.visitante.xg;
+        const available = Object.values(coverage).filter(Boolean).length;
+        const total = Object.keys(coverage).length;
+        return '<tr><td>' + esc(row.snapshot_date || "—") + '</td><td>' +
+          esc(row.source_timestamp || "—") + '</td><td>' +
+          esc(localXg == null ? "—" : fmt(localXg,2)) + '</td><td>' +
+          esc(awayXg == null ? "—" : fmt(awayXg,2)) + '</td><td>' +
+          esc(available + "/" + total) + '</td><td>' +
+          esc(row.model_version || "—") + '</td></tr>';
+      }).join("");
+      output.innerHTML = '<div class="research-table-scroll"><table class="research-table"><thead><tr><th>Fecha de snapshot</th><th>Fuente consultada</th><th>xG local</th><th>xG visitante</th><th>Cobertura</th><th>Modelo</th></tr></thead><tbody>' +
+        body + '</tbody></table></div>';
+    } catch (error) {
+      output.innerHTML = '<div class="pitch-empty">No se pudo consultar Supabase: ' + esc(error.message) + '</div>';
+    } finally {
+      button.disabled = false;
+      button.textContent = old;
+    }
+  }
+
   function renderMatchEvents(data) {
     const events = Array.isArray(data && data.eventos) ? data.eventos.slice().sort((a,b)=>
       (Number(a.minute)||0)+(Number(a.minute_added)||0)/1000 - ((Number(b.minute)||0)+(Number(b.minute_added)||0)/1000)
@@ -559,7 +607,10 @@
     else html += '<section class="research-card"><h3>Cronología del encuentro</h3>'+renderMatchEvents(data)+'</section>';
     const h2h = data.h2h && Array.isArray(data.h2h.recent_matches) ? data.h2h.recent_matches.filter(item=>item.finished===true).slice(0,8) : [];
     if (h2h.length) html += '<section class="research-card"><h3>Enfrentamientos recientes</h3><div class="research-table-scroll"><table class="research-table"><thead><tr><th>Fecha</th><th>Local</th><th>Marcador</th><th>Visitante</th></tr></thead><tbody>'+h2h.map(item=>'<tr><td>'+esc(item.time_utc||"—")+'</td><td>'+esc(item.home && item.home.name||"—")+'</td><td>'+esc(item.score_home)+"-"+esc(item.score_away)+'</td><td>'+esc(item.away && item.away.name||"—")+'</td></tr>').join("")+'</tbody></table></div></section>';
+    html += renderStoredHistoryPanel(data.persistencia || {});
     $("pitch-output").innerHTML = html;
+    const historyButton = $("pitch-history-load");
+    if (historyButton) historyButton.addEventListener("click", () => loadStoredHistory(match.id || state.selected.id));
     if (live) status("Partido en vivo · " + (live.clock && live.clock.display || "en curso") + ". La información se actualiza cada 15 segundos.");
     else if (isFinished) status("Análisis del encuentro finalizado cargado.");
     else status("Partido programado cargado. La alineación puede ser provisional y las estadísticas se completarán después del encuentro.");
