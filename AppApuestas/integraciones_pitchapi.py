@@ -79,6 +79,7 @@ class PitchAPIClient:
         optional: bool = False,
         cache_seconds: int | None = None,
     ) -> Any:
+        global _RATE_LIMIT_UNTIL
         if not self.configured:
             raise PitchAPIError(
                 "PitchAPI aún no está conectado. Crea una clave gratuita y guárdala en Render "
@@ -130,7 +131,6 @@ class PitchAPIClient:
                 retry_seconds = max(10, min(600, int(retry_header)))
             except (TypeError, ValueError):
                 retry_seconds = 60
-            global _RATE_LIMIT_UNTIL
             with _RATE_LIMIT_LOCK:
                 _RATE_LIMIT_UNTIL = max(_RATE_LIMIT_UNTIL, time.monotonic() + retry_seconds)
             raise PitchAPIError(
