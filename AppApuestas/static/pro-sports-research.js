@@ -30,6 +30,51 @@
   function nflParams(){
     return new URLSearchParams({season:$("nfl-season").value||"2026",...( $("nfl-week").value?{week:$("nfl-week").value}:{})});
   }
+  function dynamicTable(rows,limit){
+    if(!Array.isArray(rows)||!rows.length)return '<div class="pitch-empty">No hay registros para estos filtros.</div>';
+    const columns=Object.keys(rows[0]).slice(0,16);
+    return table(rows,columns,limit||35);
+  }
+  async function loadNFLStats(){
+    const params=nflParams();
+    params.set("entity",$("nfl-stats-entity").value);
+    params.set("summary_level",$("nfl-stats-level").value);
+    params.set("limit","2500");
+    status("Consultando estadísticas NFL por jugador/equipo…");
+    try{
+      const data=await get("/api/v1/research/nfl/statistics?"+params.toString());
+      $("nfl-output").innerHTML='<section class="research-card"><h3>Estadísticas NFL · '+esc(data.entity)+' · '+esc(data.summary_level)+'</h3>'+dynamicTable(data.estadisticas,35)+'</section>';
+      status(data.total_registros+" registros estadísticos NFL devueltos.");
+    }catch(error){status("NFL estadísticas: "+error.message,true);}
+  }
+  async function loadNFLSnapCounts(){
+    const params=nflParams();params.delete("week");params.set("limit","3000");
+    status("Consultando snaps NFL…");
+    try{
+      const data=await get("/api/v1/research/nfl/snap-counts?"+params.toString());
+      $("nfl-output").innerHTML='<section class="research-card"><h3>Snap counts NFL · '+esc(data.season)+'</h3>'+dynamicTable(data.snap_counts,40)+'</section>';
+      status(data.total_registros+" registros de snap counts devueltos.");
+    }catch(error){status("NFL snaps: "+error.message,true);}
+  }
+  async function loadNFLNextGen(){
+    const params=nflParams();params.delete("week");params.set("stat_type",$("nfl-nextgen-type").value);params.set("limit","3000");
+    status("Consultando Next Gen Stats NFL…");
+    try{
+      const data=await get("/api/v1/research/nfl/nextgen-stats?"+params.toString());
+      $("nfl-output").innerHTML='<section class="research-card"><h3>Next Gen Stats · '+esc(data.stat_type)+'</h3>'+dynamicTable(data.estadisticas,40)+'</section>';
+      status(data.total_registros+" registros de Next Gen Stats devueltos.");
+    }catch(error){status("NFL Next Gen Stats: "+error.message,true);}
+  }
+  async function loadNFLPFR(){
+    const params=nflParams();params.delete("week");
+    params.set("stat_type",$("nfl-pfr-type").value);params.set("summary_level",$("nfl-pfr-level").value);params.set("limit","3000");
+    status("Consultando métricas avanzadas de Pro Football Reference…");
+    try{
+      const data=await get("/api/v1/research/nfl/pfr-advanced?"+params.toString());
+      $("nfl-output").innerHTML='<section class="research-card"><h3>PFR advanced · '+esc(data.stat_type)+' · '+esc(data.summary_level)+'</h3>'+dynamicTable(data.estadisticas,40)+'</section>';
+      status(data.total_registros+" registros de métricas avanzadas devueltos.");
+    }catch(error){status("NFL PFR Advanced: "+error.message,true);}
+  }
   async function loadNFLschedule(){
     status("Consultando calendario NFL…");
     try{
@@ -126,6 +171,10 @@
     $("nfl-rosters").addEventListener("click",loadNFLrosters);
     $("nfl-injuries").addEventListener("click",loadNFLinjuries);
     $("nfl-depth").addEventListener("click",loadNFLdepth);
+    $("nfl-stats").addEventListener("click",loadNFLStats);
+    $("nfl-snap-counts").addEventListener("click",loadNFLSnapCounts);
+    $("nfl-nextgen").addEventListener("click",loadNFLNextGen);
+    $("nfl-pfr").addEventListener("click",loadNFLPFR);
     $("mlb-load").addEventListener("click",loadMLB);
     $("nfl-game").addEventListener("change",()=>{$("nfl-pbp").disabled=!$("nfl-game").value;});
     loadProviderStatus();
