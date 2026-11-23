@@ -156,7 +156,7 @@
       const advancedCols=["firstName","familyName","teamTricode","minutes","offensiveRating","defensiveRating","netRating","assistPercentage","trueShootingPercentage","usagePercentage","pace","possessions","PIE"];
       const trackingCols=["firstName","familyName","teamTricode","minutes","speed","distance","touches","passes","assists","contestedFieldGoalsMade","defendedAtRimFieldGoalsMade"];
       $("nba-extra-output").innerHTML=
-        '<section class="research-card"><h3>Box score tradicional</h3>'+renderLogs({registros:data.jugadores})+'</section>'+
+        '<section class="research-card"><h3>Box score tradicional</h3>'+renderGeneric(data.jugadores,["firstName","familyName","teamTricode","position","minutes","fieldGoalsMade","fieldGoalsAttempted","fieldGoalsPercentage","threePointersMade","threePointersAttempted","threePointersPercentage","freeThrowsMade","freeThrowsAttempted","reboundsTotal","assists","steals","blocks","turnovers","points","plusMinusPoints"])+'</section>'+
         '<section class="research-card"><h3>Box score avanzado</h3>'+renderGeneric(data.jugadores_avanzado,advancedCols)+'</section>'+
         '<section class="research-card"><h3>Player tracking</h3>'+renderGeneric(data.tracking_jugadores,trackingCols)+'</section>'+
         '<section class="research-card"><h3>Resumen por equipo</h3>'+renderGeneric(data.equipos,["teamName","teamTricode","minutes","points","reboundsTotal","assists","steals","blocks","turnovers","plusMinusPoints"])+'</section>'+
