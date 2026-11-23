@@ -85,6 +85,12 @@ def _cached(key: str, loader):
     return value
 
 
+def current_nba_season(reference_date: date | None = None) -> str:
+    today = reference_date or date.today()
+    start_year = today.year if today.month >= 10 else today.year - 1
+    return f"{start_year}-{(start_year + 1) % 100:02d}"
+
+
 def nba_status() -> dict[str, Any]:
     try:
         import nba_api  # noqa: F401
@@ -142,13 +148,14 @@ def game_shots(
     game_id: str,
     team_id: int = 0,
     player_id: int = 0,
-    season: str = "2026-27",
+    season: str | None = None,
     season_type: str = "Regular Season",
 ) -> dict[str, Any]:
     if not re.fullmatch(r"\d{8,12}", game_id):
         raise ValueError("game_id NBA debe ser un identificador numérico válido.")
     if team_id < 0 or player_id < 0:
         raise ValueError("team_id y player_id deben ser cero o positivos.")
+    season = season or current_nba_season()
     if not re.fullmatch(r"\d{4}-\d{2}", season):
         raise ValueError("season debe tener formato YYYY-YY.")
     if season_type not in {"Regular Season", "Playoffs", "Pre Season", "All Star"}:
