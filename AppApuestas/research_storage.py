@@ -30,7 +30,12 @@ class ResearchStorage:
 
     def __init__(self, timeout: float = 12.0):
         self.url = os.getenv("SUPABASE_URL", "").strip().rstrip("/")
-        self.key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+        # Prefer the current sb_secret_ key. Keep legacy service_role support
+        # for existing deployments while Supabase deprecates the old JWT keys.
+        self.key = (
+            os.getenv("SUPABASE_SECRET_KEY", "").strip()
+            or os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+        )
         self.table = os.getenv("SUPABASE_RESEARCH_TABLE", "research_snapshots").strip()
         self.timeout = timeout
 
@@ -48,7 +53,7 @@ class ResearchStorage:
             "configurado": self.configured,
             "tabla_snapshots": self.table,
             "tablas_archivo": list(self.ARCHIVE_TABLES),
-            "modo": "servidor privado; usa service-role key" if self.configured else "desactivado",
+            "modo": "servidor privado; clave secreta de Supabase" if self.configured else "desactivado",
             "nota": (
                 "El archivo histórico de AppApuestas ya está preparado. "
                 "Incluye resultados de fútbol y MLB, métricas avanzadas de fútbol, "
@@ -61,13 +66,17 @@ class ResearchStorage:
     def _headers(self) -> dict[str, str]:
         if not self.configured:
             raise ResearchStorageError("Supabase no está configurado para AppApuestas.")
-        return {
+        headers = {
             "apikey": self.key,
-            "Authorization": "Bearer " + self.key,
             "Content-Type": "application/json",
             "Accept": "application/json",
             "Prefer": "resolution=merge-duplicates,return=minimal",
         }
+        # New sb_secret_ keys are not JWTs: send them only as apikey.
+        # Legacy service_role keys are JWTs and retain Authorization support.
+        if not self.key.startswith("sb_secret_"):
+            headers["Authorization"] = "Bearer " + self.key
+        return headers
 
     def _get_rows(self, table: str, params: dict[str, str], context: str) -> list[dict[str, Any]]:
         if not self.configured:
