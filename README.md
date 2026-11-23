@@ -48,6 +48,22 @@ Añade \`SPORTSGAMEODDS_API_KEY\` a las variables privadas de Render. No guardes
 | \`GET /predecir\` | Predicción manual con históricos |
 | \`POST /actualizar-datos\` | Actualizar los CSV de resultados históricos |
 
+### Archivo histórico de investigación
+
+El almacén Supabase contiene resultados históricos de fútbol y MLB, métricas xG de American Soccer Analysis y StatsBomb Open Data, identidades de equipos/eventos y resúmenes compactos de cuotas. Las métricas avanzadas conservan atribución; los valores que una fuente no publica permanecen vacíos.
+
+Migraciones:
+- `AppApuestas/sql/001_research_snapshots.sql`
+- `AppApuestas/sql/002_historical_archive.sql`
+
+Rutas principales:
+- `GET /api/v1/research/archive/teams/{team_name}?before_date=YYYY-MM-DD&limit=5`
+- `GET /api/v1/research/archive/events/{event_id}/markets?limit=50`
+- `GET /api/v1/research/storage/status`
+- `GET /api/v1/research/storage/history/{match_id}?provider=pitchapi`
+
+La URL y la service-role key se configuran solo en Render. La key no debe llegar al frontend ni a Flutter. Los resúmenes de cuotas guardan apertura, cierre y rangos; no son un histórico tick a tick.
+
 Deportes admitidos: \`futbol\`, \`nba\`, \`nfl\`, \`mlb\`.
 
 ## Ejecutar localmente
