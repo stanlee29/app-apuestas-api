@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import os
 import re
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import urlparse
 
@@ -202,48 +202,61 @@ class ResearchStorage:
         away = " ".join(str(away_team or "").split())
         if not home or not away or home.casefold() == away.casefold():
             raise ValueError("Los dos equipos deben ser válidos y distintos.")
-        # Reuse the strict team-name validation before building PostgREST filters.
         self._team_or_filter(home)
         self._team_or_filter(away)
         target_date = date.fromisoformat(match_date).isoformat()
         safe_limit = max(1, min(5, int(limit)))
+        cutoff = (date.today() - timedelta(days=14)).isoformat()
 
-        def quoted(value: str) -> str:
-            return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
-
-        orientations = (
-            "(and(payload->>local.eq." + quoted(home) +
-            ",payload->>visitante.eq." + quoted(away) + "),"
-            "and(payload->>local.eq." + quoted(away) +
-            ",payload->>visitante.eq." + quoted(home) + "))"
-        )
-        rows = self._get_rows(
+        # First read only small JSON fields for recent snapshots, not every market payload.
+        metadata_rows = self._get_rows(
             self.table,
             {
-                "select": "provider,match_id,snapshot_type,snapshot_date,source_timestamp,model_version,payload",
+                "select": (
+                    "match_id,snapshot_date,"
+                    "home_name:payload->>local,"
+                    "away_name:payload->>visitante,"
+                    "kickoff:payload->>fecha_hora"
+                ),
                 "provider": "eq.sportsgameodds",
                 "snapshot_type": "eq.daily_markets",
-                "payload->>fecha_hora": "like." + target_date + "*",
-                "or": orientations,
+                "snapshot_date": "gte." + cutoff,
                 "order": "snapshot_date.desc",
-                "limit": str(safe_limit),
+                "limit": "100",
             },
-            "los snapshots diarios de SportsGameOdds",
+            "la búsqueda de snapshots diarios por equipo",
         )
 
-        # Verify the exact orientation after retrieval; never rely on a fuzzy team match.
-        events = []
-        for row in rows:
-            payload = row.get("payload") if isinstance(row.get("payload"), dict) else {}
-            pair = (
-                str(payload.get("local") or "").casefold(),
-                str(payload.get("visitante") or "").casefold(),
-            )
-            if pair not in {
+        candidates = []
+        for row in metadata_rows:
+            home_name = str(row.get("home_name") or "").casefold()
+            away_name = str(row.get("away_name") or "").casefold()
+            kickoff = str(row.get("kickoff") or "")
+            same_pair = (home_name, away_name) in {
                 (home.casefold(), away.casefold()),
                 (away.casefold(), home.casefold()),
-            }:
+            }
+            if same_pair and kickoff[:10] == target_date:
+                candidates.append(row)
+
+        events = []
+        for candidate in candidates[:safe_limit]:
+            rows = self._get_rows(
+                self.table,
+                {
+                    "select": "provider,match_id,snapshot_type,snapshot_date,source_timestamp,model_version,payload",
+                    "provider": "eq.sportsgameodds",
+                    "match_id": "eq." + str(candidate.get("match_id") or ""),
+                    "snapshot_type": "eq.daily_markets",
+                    "snapshot_date": "eq." + str(candidate.get("snapshot_date") or ""),
+                    "limit": "1",
+                },
+                "la carga del snapshot diario de cuotas",
+            )
+            if not rows:
                 continue
+            row = rows[0]
+            payload = row.get("payload") if isinstance(row.get("payload"), dict) else {}
             events.append({
                 "match_id": row.get("match_id"),
                 "snapshot_date": row.get("snapshot_date"),
@@ -256,6 +269,7 @@ class ResearchStorage:
                 "mercados_disponibles": payload.get("mercados_disponibles"),
                 "mercados": payload.get("mercados") if isinstance(payload.get("mercados"), list) else [],
             })
+
         return {
             "provider": "sportsgameodds",
             "equipos_solicitados": {"local": home, "visitante": away},
