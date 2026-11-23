@@ -147,6 +147,37 @@
     return '<div class="research-table-scroll"><table class="research-table"><thead><tr>'+cols.map(k=>'<th>'+esc(k.replaceAll("_"," "))+'</th>').join("")+'</tr></thead><tbody>'+
       rows.slice(0,30).map(row=>'<tr>'+cols.map(k=>'<td>'+esc(row[k]??"—")+'</td>').join("")+'</tr>').join("")+'</tbody></table></div><p class="research-muted">Mostrando '+Math.min(rows.length,30)+' de '+rows.length+' registros recibidos.</p>';
   }
+  async function loadTeams(){
+    if(!$("nba-team-roster-select"))return;
+    try{
+      const data=await get("/api/v1/research/nba/teams");
+      const rows=Array.isArray(data.equipos)?data.equipos:[];
+      $("nba-team-roster-select").innerHTML='<option value="">Selecciona equipo NBA</option>'+rows.map(t=>
+        '<option value="'+esc(t.id)+'">'+esc(t.nombre+" · "+t.abreviatura)+'</option>').join("");
+    }catch(error){
+      $("nba-team-roster-select").innerHTML='<option value="">No se pudo cargar el catálogo</option>';
+      status("No se pudo cargar el catálogo NBA: "+error.message,true);
+    }
+  }
+  function renderRoster(data){
+    const rows=Array.isArray(data.jugadores)?data.jugadores:[];
+    if(!rows.length)return '<div class="pitch-empty">NBA.com no devolvió jugadores para el equipo y temporada seleccionados.</div>';
+    const cols=["PLAYER","NUM","POSITION","HEIGHT","WEIGHT","AGE","EXP","SCHOOL"];
+    return '<div class="research-table-scroll"><table class="research-table"><thead><tr>'+cols.map(k=>'<th>'+esc(k)+'</th>').join("")+'</tr></thead><tbody>'+
+      rows.map(player=>'<tr>'+cols.map(k=>'<td>'+esc(player[k]??"—")+'</td>').join("")+'</tr>').join("")+
+      '</tbody></table></div>';
+  }
+  async function loadRoster(){
+    const teamId=$("nba-team-roster-select").value, season=$("nba-season").value||"2026-27";
+    if(!teamId){status("Selecciona un equipo para consultar su roster.",true);return;}
+    $("nba-roster").disabled=true;status("Consultando roster actual para "+season+"…");
+    try{
+      const data=await get("/api/v1/research/nba/teams/"+encodeURIComponent(teamId)+"/roster?season="+encodeURIComponent(season));
+      $("nba-roster-output").innerHTML='<section class="research-card"><h3>Plantilla NBA · '+esc(season)+'</h3>'+renderRoster(data)+'</section>';
+      status(data.total_jugadores+" jugadores devueltos por NBA.com para la temporada "+season+".");
+    }catch(error){$("nba-roster-output").innerHTML="";status("No se pudo cargar el roster: "+error.message,true);}
+    finally{$("nba-roster").disabled=false;}
+  }
   async function loadLogs(){
     const season=$("nba-season").value||"2026-27", entity=$("nba-log-entity").value;
     $("nba-logs").disabled=true;status("Consultando historial NBA…");
@@ -164,9 +195,9 @@
     $("nba-game").addEventListener("change",selectGame);
     $("nba-shots").addEventListener("click",loadShots);
     $("nba-logs").addEventListener("click",loadLogs);
+    $("nba-roster").addEventListener("click",loadRoster);
     $("nba-log-entity").addEventListener("change",()=>{ $("nba-log-label").textContent=$("nba-log-entity").value==="P"?"ID jugador / Player logs":"Equipo / Team logs";});
-    const panel=$("nba-research");
-    if(panel)panel.addEventListener("toggle",()=>{if(panel.open&&state.games.length===0)loadScoreboard();});
+    loadTeams();
   }
   if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",init);else init();
 })();
