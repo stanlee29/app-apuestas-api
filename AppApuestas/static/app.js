@@ -1,7 +1,7 @@
 (() => {
   "use strict";
   const SPORTS = { futbol:{name:"Fútbol"}, nba:{name:"NBA"}, nfl:{name:"NFL"}, mlb:{name:"MLB"} };
-  const state = { sport:"futbol", days:2, loading:false, installPrompt:null };
+  const state = { sport:"futbol", dayOffset:0, loading:false, installPrompt:null };
   const $ = (id) => document.getElementById(id);
   const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (c) => ({
     "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
@@ -27,7 +27,19 @@
       return new Date(Number(raw.slice(0,4)),Number(raw.slice(4,6))-1,Number(raw.slice(6,8)))
         .toLocaleDateString("es-SV",{day:"2-digit",month:"short"});
     };
+    if(parts.length===2 && parts[0]===parts[1]) return fmt(parts[0]);
     return parts.length===2?fmt(parts[0])+" — "+fmt(parts[1]):fmt(parts[0]);
+  }
+  function elSalvadorDate(offset) {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone:"America/El_Salvador", year:"numeric", month:"2-digit", day:"2-digit"
+    }).formatToParts(new Date());
+    const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+    const target = new Date(Date.UTC(
+      Number(values.year), Number(values.month)-1, Number(values.day)+Number(offset||0)
+    ));
+    const pad = value => String(value).padStart(2,"0");
+    return target.getUTCFullYear()+"-"+pad(target.getUTCMonth()+1)+"-"+pad(target.getUTCDate());
   }
   function formatKickoff(value) {
     if(!value) return "Horario no disponible";
@@ -90,10 +102,17 @@
     $("date-range").textContent=formatDateRange(data.rango_fechas);
     $("results-count").textContent=events.length+(events.length===1?" evento":" eventos");
     const notice=$("notice");
+    const warnings = [];
     if(Array.isArray(data.errores_fuente)&&data.errores_fuente.length){
-      notice.hidden=false;notice.className="notice";
-      notice.textContent="Una o más ligas no respondieron. Se muestran únicamente los eventos consultados correctamente.";
-    } else {notice.hidden=true;notice.textContent="";}
+      warnings.push("Una o más ligas no respondieron; se muestran los eventos recibidos correctamente.");
+    }
+    if(data.paginacion_completa===false){
+      warnings.push("La fuente devolvió más páginas de las que permite la consulta actual ("+
+        Number(data.paginas_consultadas||0)+" páginas). La cartelera puede estar incompleta.");
+    }
+    notice.hidden=warnings.length===0;
+    notice.className=warnings.length?"notice":"";
+    notice.textContent=warnings.join(" ");
     if(!events.length){
       $("events-list").innerHTML='<article class="empty-card"><div class="empty-symbol">⌕</div>'+
         '<strong>No hay eventos disponibles en este rango</strong><p>'+
@@ -112,7 +131,8 @@
     $("events-list").innerHTML='<article class="loading-card"><span class="loader"></span>'+
       "<strong>Consultando cartelera</strong><small>Solicitando eventos y datos del modelo...</small></article>";
     try {
-      const url="/cartelera/"+encodeURIComponent(state.sport)+"?dias="+state.days;
+      const selectedDate=elSalvadorDate(state.dayOffset);
+      const url="/cartelera/"+encodeURIComponent(state.sport)+"?fecha="+encodeURIComponent(selectedDate);
       const response=await fetch(url,{cache:"no-store"});
       const payload=await response.json();
       if(!response.ok){
@@ -247,7 +267,7 @@
   });
   $("market-close").addEventListener("click",()=> $("market-dialog").close());
   document.querySelectorAll("[data-sport]").forEach(button=>button.addEventListener("click",()=>selectSport(button.dataset.sport)));
-  $("days-filter").addEventListener("change",event=>{state.days=Number(event.target.value);loadCartelera();});
+  $("days-filter").addEventListener("change",event=>{state.dayOffset=Number(event.target.value);loadCartelera();});
   $("refresh-btn").addEventListener("click",loadCartelera);
   window.addEventListener("beforeinstallprompt",event=>{
     event.preventDefault();state.installPrompt=event;$("install-btn").hidden=false;
