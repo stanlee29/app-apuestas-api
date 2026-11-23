@@ -495,10 +495,14 @@
   function renderHistoricalArchivePanel(match) {
     const home = match && match.home_team && match.home_team.name || "";
     const away = match && match.away_team && match.away_team.name || "";
+    const eventId = match && (match.id || match.event_id) || "";
     return '<section class="research-card"><h3>Archivo histórico ampliado</h3>' +
-      '<p class="research-muted">Cruza el historial de resultados con métricas históricas de xG de ASA y StatsBomb. Solo se consultan partidos anteriores a este encuentro.</p>' +
-      '<button type="button" class="research-button secondary" id="pitch-archive-load" data-home="' + esc(home) + '" data-away="' + esc(away) + '">Consultar archivo histórico</button>' +
-      '<div id="pitch-archive-output" class="research-output"></div></section>';
+      '<p class="research-muted">Cruza resultados, xG y métricas avanzadas de ASA/StatsBomb. Solo usa partidos anteriores al encuentro analizado.</p>' +
+      '<div class="pitch-two-col">' +
+      '<div><button type="button" class="research-button secondary" id="pitch-archive-load" data-home="' + esc(home) + '" data-away="' + esc(away) + '">Consultar historial de equipos</button>' +
+      '<div id="pitch-archive-output" class="research-output"></div></div>' +
+      '<div><button type="button" class="research-button secondary" id="pitch-market-archive-load" data-event="' + esc(eventId) + '">Consultar histórico de cuotas</button>' +
+      '<div id="pitch-market-archive-output" class="research-output"></div></div></div></section>';
   }
 
   function renderArchiveTeamCard(data) {
@@ -531,6 +535,52 @@
     return '<div class="pitch-subcard"><h4>' + esc(team) + '</h4>' + kpis +
       '<small class="pitch-data-note">Archivo de resultados: Football-Data.co.uk · fecha de corte: ' + esc(data.antes_de || "—") + '</small>' +
       '<div class="pitch-form-list">' + rows + '</div>' + advancedTable + attribution + '</div>';
+  }
+
+  function renderArchiveMarketRows(data) {
+    const markets = Array.isArray(data && data.mercados) ? data.mercados : [];
+    if (!markets.length) return '<div class="pitch-empty">No hay cuotas históricas guardadas para los identificadores vinculados a este evento.</div>';
+    const rows = markets.map(row => {
+      const number = value => value == null || value === "" ? "—" : Number(value).toFixed(2);
+      const percent = value => value == null || value === "" ? "—" : (Number(value) * 100).toFixed(1) + "%";
+      const market = String(row.market_key || "Mercado") + (row.line == null ? "" : " " + row.line);
+      return '<tr><td>' + esc(market) + '</td><td>' + esc(row.selection || "—") + '</td>' +
+        '<td>' + esc(row.bookmaker || row.provider || "—") + '</td>' +
+        '<td>' + number(row.opening_odds) + '</td><td>' + number(row.closing_odds) + '</td>' +
+        '<td>' + percent(row.closing_fair_probability) + '</td>' +
+        '<td>' + esc(row.snapshot_count == null ? "—" : row.snapshot_count) + '</td></tr>';
+    }).join("");
+    return '<div class="research-table-scroll"><table class="research-table"><thead><tr>' +
+      '<th>Mercado</th><th>Selección</th><th>Casa/fuente</th><th>Apertura</th><th>Cierre</th><th>Prob. justa</th><th>Obs.</th>' +
+      '</tr></thead><tbody>' + rows + '</tbody></table></div>' +
+      '<small class="pitch-data-note">Precios históricos compactados. La probabilidad justa solo aparece cuando la fuente la guardó; no se calcula ni completa de forma artificial.</small>';
+  }
+
+  async function loadArchiveMarkets(match) {
+    const button = $("pitch-market-archive-load");
+    const output = $("pitch-market-archive-output");
+    if (!button || !output) return;
+    const eventId = String(match && (match.id || match.event_id) || button.dataset.event || "").trim();
+    if (!eventId) {
+      output.innerHTML = '<div class="pitch-empty">El encuentro no tiene un identificador consultable para las cuotas históricas.</div>';
+      return;
+    }
+    const old = button.textContent;
+    button.disabled = true;
+    button.textContent = "Consultando cuotas…";
+    output.innerHTML = '<div class="pitch-empty">Buscando apertura, cierre y movimientos resumidos…</div>';
+    try {
+      const data = await get("/api/v1/research/archive/events/" + encodeURIComponent(eventId) + "/markets?limit=50");
+      output.innerHTML = renderArchiveMarketRows(data);
+      if (data && data.event_ids_consultados && data.event_ids_consultados.length > 1) {
+        output.innerHTML += '<small class="pitch-data-note">IDs relacionados consultados: ' + esc(data.event_ids_consultados.join(", ")) + '</small>';
+      }
+    } catch (error) {
+      output.innerHTML = '<div class="pitch-empty">No se pudo consultar el histórico de cuotas: ' + esc(error && error.message || "error de conexión") + '. Verifica SUPABASE_SECRET_KEY en Render.</div>';
+    } finally {
+      button.disabled = false;
+      button.textContent = old;
+    }
   }
 
   async function loadArchiveHistory(match) {
@@ -692,6 +742,8 @@
     if (historyButton) historyButton.addEventListener("click", () => loadStoredHistory(match.id || state.selected.id));
     const archiveButton = $("pitch-archive-load");
     if (archiveButton) archiveButton.addEventListener("click", () => loadArchiveHistory(match));
+    const marketArchiveButton = $("pitch-market-archive-load");
+    if (marketArchiveButton) marketArchiveButton.addEventListener("click", () => loadArchiveMarkets(match));
     if (live) status("Partido en vivo · " + (live.clock && live.clock.display || "en curso") + ". La información se actualiza cada 15 segundos.");
     else if (isFinished) status("Análisis del encuentro finalizado cargado.");
     else status("Partido programado cargado. La alineación puede ser provisional y las estadísticas se completarán después del encuentro.");
