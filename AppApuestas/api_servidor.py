@@ -41,6 +41,7 @@ from nfl_research import (
 )
 from mlb_research import MLBResearchError, mlb_status, statcast as mlb_statcast
 from research_storage import ResearchStorage, ResearchStorageError
+from open_football_history import OpenFootballHistoryError, open_football_status, team_history as open_football_team_history
 
 BASE_DIR = Path(__file__).resolve().parent
 DATOS_DIR = BASE_DIR / "datos"
@@ -277,6 +278,8 @@ def research_status():
             "nba": nba_status(),
             "nfl": nfl_status(),
             "mlb": mlb_status(),
+            "open_football_results": open_football_status(),
+            "research_storage": ResearchStorage().status(),
         },
         "capacidades": {
             "cartelera_y_cuotas": "SportsGameOdds",
@@ -459,6 +462,30 @@ def research_thesportsdb_event_analysis(
         raise HTTPException(status_code=exc.status_code, detail={
             "codigo": exc.code, "mensaje": str(exc)
         }) from exc
+
+
+@app.get("/api/v1/research/football/open-data/status", tags=["Historial"])
+def research_open_football_status():
+    return open_football_status()
+
+
+@app.get("/api/v1/research/football/open-data/team-history", tags=["Historial"])
+def research_open_football_team_history(
+    team_name: str = Query(..., min_length=1, max_length=120),
+    team_ident: str | None = Query(default=None, max_length=100),
+    before: date | None = Query(default=None, description="Excluir partidos desde esta fecha"),
+    limit: int = Query(default=10, ge=1, le=50),
+):
+    try:
+        return open_football_team_history(
+            team_name, team_ident=team_ident,
+            before=before.isoformat() if before else None,
+            limit=limit,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except OpenFootballHistoryError as exc:
+        raise HTTPException(status_code=exc.status_code, detail={"codigo": exc.code, "mensaje": str(exc)}) from exc
 
 
 @app.get("/api/v1/research/statsbomb/competitions", tags=["Investigación"])
