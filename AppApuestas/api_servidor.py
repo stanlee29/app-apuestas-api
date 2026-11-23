@@ -603,7 +603,7 @@ def research_nba_teams():
 
 
 @app.get("/api/v1/research/nba/teams/{team_id}/roster", tags=["Investigación NBA"])
-def research_nba_team_roster(team_id: int, season: str = Query(default="2026-27", max_length=7)):
+def research_nba_team_roster(team_id: int, season: str | None = Query(default=None, max_length=7)):
     try:
         return nba_team_roster(team_id, season=season)
     except ValueError as exc:
@@ -617,7 +617,7 @@ def research_nba_game_shots(
     game_id: str,
     team_id: int = Query(default=0, ge=0),
     player_id: int = Query(default=0, ge=0),
-    season: str = Query(default="2026-27", max_length=7),
+    season: str | None = Query(default=None, max_length=7),
     season_type: str = Query(default="Regular Season", max_length=30),
 ):
     try:
