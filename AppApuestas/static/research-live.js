@@ -492,6 +492,78 @@
     return '<div class="pitch-two-col">' + sideCard(home,homeId) + sideCard(away,awayId) + '</div>';
   }
 
+  function renderHistoricalArchivePanel(match) {
+    const home = match && match.home_team && match.home_team.name || "";
+    const away = match && match.away_team && match.away_team.name || "";
+    return '<section class="research-card"><h3>Archivo histórico ampliado</h3>' +
+      '<p class="research-muted">Cruza el historial de resultados con métricas históricas de xG de ASA y StatsBomb. Solo se consultan partidos anteriores a este encuentro.</p>' +
+      '<button type="button" class="research-button secondary" id="pitch-archive-load" data-home="' + esc(home) + '" data-away="' + esc(away) + '">Consultar archivo histórico</button>' +
+      '<div id="pitch-archive-output" class="research-output"></div></section>';
+  }
+
+  function renderArchiveTeamCard(data) {
+    const summary = data && data.resumen || {};
+    const matches = Array.isArray(data && data.partidos) ? data.partidos : [];
+    const advanced = Array.isArray(data && data.metricas_avanzadas) ? data.metricas_avanzadas : [];
+    const team = data && data.equipo || "Equipo";
+    const kpis = '<div class="pitch-form-kpis">' +
+      '<span><b>' + esc(summary.ganados ?? "—") + '-' + esc(summary.empatados ?? "—") + '-' + esc(summary.perdidos ?? "—") + '</b><small>G-E-P</small></span>' +
+      '<span><b>' + (summary.goles_favor_promedio == null ? "—" : Number(summary.goles_favor_promedio).toFixed(2)) + '</b><small>GF/partido</small></span>' +
+      '<span><b>' + (summary.goles_contra_promedio == null ? "—" : Number(summary.goles_contra_promedio).toFixed(2)) + '</b><small>GC/partido</small></span>' +
+      '<span><b>' + (summary.remates_favor_promedio == null ? "—" : Number(summary.remates_favor_promedio).toFixed(1)) + '</b><small>Remates/partido</small></span></div>';
+    const rows = matches.length ? matches.map(row =>
+      '<div class="pitch-form-row"><span class="pitch-form-result ' + (row.resultado === "G" ? "win" : row.resultado === "P" ? "loss" : "draw") + '">' + esc(row.resultado || "—") + '</span>' +
+      '<span class="pitch-form-opponent">' + esc(row.rival || "Rival") + '</span><strong>' + esc(row.marcador || "—") + '</strong><small>' + esc(row.fecha || "—") + '</small></div>'
+    ).join("") : '<div class="pitch-empty">No se encontraron coincidencias exactas en el archivo de resultados para este nombre de equipo.</div>';
+    const advancedRows = advanced.length ? advanced.slice(0, 6).map(row =>
+      '<tr><td>' + esc(row.fecha || "—") + '</td><td>' + esc(row.rival || "—") + '</td>' +
+      '<td>' + (row.xg_favor == null ? "—" : Number(row.xg_favor).toFixed(2)) + '</td>' +
+      '<td>' + (row.xg_contra == null ? "—" : Number(row.xg_contra).toFixed(2)) + '</td>' +
+      '<td>' + esc(row.fuente || "—") + '</td></tr>'
+    ).join("") : "";
+    const advancedTable = advancedRows
+      ? '<h5>Métricas avanzadas publicadas</h5><div class="research-table-scroll"><table class="research-table"><thead><tr><th>Fecha</th><th>Rival</th><th>xG F</th><th>xG C</th><th>Fuente</th></tr></thead><tbody>' + advancedRows + '</tbody></table></div>'
+      : '<div class="pitch-empty">No hay métricas avanzadas de xG para las coincidencias históricas de este equipo.</div>';
+    const sources = [...new Set(advanced.map(row => row.fuente).filter(Boolean))];
+    const attribution = sources.includes("american_soccer_analysis") || sources.includes("statsbomb_open")
+      ? '<small class="pitch-data-note">American Soccer Analysis: CC BY-SA 4.0 con atribución. StatsBomb Open Data: atribución a StatsBomb cuando se publiquen resultados.</small>'
+      : "";
+    return '<div class="pitch-subcard"><h4>' + esc(team) + '</h4>' + kpis +
+      '<small class="pitch-data-note">Archivo de resultados: Football-Data.co.uk · fecha de corte: ' + esc(data.antes_de || "—") + '</small>' +
+      '<div class="pitch-form-list">' + rows + '</div>' + advancedTable + attribution + '</div>';
+  }
+
+  async function loadArchiveHistory(match) {
+    const button = $("pitch-archive-load");
+    const output = $("pitch-archive-output");
+    if (!button || !output) return;
+    const old = button.textContent;
+    const home = String(match && match.home_team && match.home_team.name || button.dataset.home || "").trim();
+    const away = String(match && match.away_team && match.away_team.name || button.dataset.away || "").trim();
+    if (!home || !away) {
+      output.innerHTML = '<div class="pitch-empty">El encuentro no tiene nombres de equipos suficientes para consultar el archivo.</div>';
+      return;
+    }
+    const cutoff = String(match && (match.time_utc || match.date) || "").slice(0, 10);
+    const suffix = (cutoff ? "?before_date=" + encodeURIComponent(cutoff) + "&" : "?") + "limit=5";
+    button.disabled = true;
+    button.textContent = "Consultando archivo…";
+    output.innerHTML = '<div class="pitch-empty">Buscando resultados históricos y métricas avanzadas…</div>';
+    try {
+      const [homeData, awayData] = await Promise.all([
+        get("/api/v1/research/archive/teams/" + encodeURIComponent(home) + suffix),
+        get("/api/v1/research/archive/teams/" + encodeURIComponent(away) + suffix)
+      ]);
+      output.innerHTML = '<div class="pitch-two-col">' + renderArchiveTeamCard(homeData) + renderArchiveTeamCard(awayData) + '</div>' +
+        '<p class="pitch-data-note">El archivo histórico es independiente de la forma reciente de PitchAPI. No todos los partidos tienen xG, remates o tarjetas; los campos ausentes se muestran como no disponibles.</p>';
+    } catch (error) {
+      output.innerHTML = '<div class="pitch-empty">No se pudo consultar el archivo histórico: ' + esc(error && error.message || "error de conexión") + '. Verifica la configuración de Supabase en Render.</div>';
+    } finally {
+      button.disabled = false;
+      button.textContent = old;
+    }
+  }
+
   function renderStoredHistoryPanel(persistencia) {
     if (persistencia && persistencia.guardado === true) {
       return '<section class="research-card"><h3>Historial persistente</h3><p class="research-muted">Este análisis se guardó en Supabase. Puedes consultar snapshots anteriores del mismo partido.</p><button type="button" class="research-button secondary" id="pitch-history-load">Consultar análisis guardados</button><div id="pitch-history-output" class="research-output"></div></section>';
@@ -596,6 +668,7 @@
     html += '<p class="research-muted">Datos analíticos disponibles: '+esc(coverage.length?coverage.join(" · "):"sin bloques avanzados confirmados")+'. '+esc(data.nota||"")+'</p></div>';
     html += '<section class="research-card"><h3>Estadísticas del partido</h3>'+renderTeamStats(stats,homeName,awayName,xg)+'</section>';
     html += '<section class="research-card"><h3>Forma reciente de la temporada</h3>'+renderRecentForm(match)+'</section>';
+    html += renderHistoricalArchivePanel(match);
     const lineups = live && live.lineups ? live.lineups : data.alineaciones || {};
     html += '<section class="research-card"><h3>'+(live?"Alineación actual y situación de jugadores":"Alineaciones y jugadores del encuentro")+'</h3><div class="pitch-two-col">'+renderLineupSide(homeName,lineups.home)+renderLineupSide(awayName,lineups.away)+'</div><p class="pitch-data-note">'+(live?"La fuente indica quién sigue en cancha, quién está en banca y las sustituciones registradas.":"Las alineaciones previstas se marcan como provisionales. Solo la etiqueta CONFIRMADA indica que la fuente reporta un XI confirmado.")+'</p>';
     if (live) html += renderLivePlayerStats(live,homeName,awayName);
@@ -617,6 +690,8 @@
     $("pitch-output").innerHTML = html;
     const historyButton = $("pitch-history-load");
     if (historyButton) historyButton.addEventListener("click", () => loadStoredHistory(match.id || state.selected.id));
+    const archiveButton = $("pitch-archive-load");
+    if (archiveButton) archiveButton.addEventListener("click", () => loadArchiveHistory(match));
     if (live) status("Partido en vivo · " + (live.clock && live.clock.display || "en curso") + ". La información se actualiza cada 15 segundos.");
     else if (isFinished) status("Análisis del encuentro finalizado cargado.");
     else status("Partido programado cargado. La alineación puede ser provisional y las estadísticas se completarán después del encuentro.");
