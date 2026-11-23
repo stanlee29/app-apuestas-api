@@ -1,6 +1,6 @@
 # AppApuestas — Backend
 
-API deportiva con FastAPI. La cartelera y los mercados se obtienen de SportsGameOdds API v2.
+API deportiva con FastAPI. La cartelera y los mercados se obtienen de SportsGameOdds API v2. El selector de la web consulta una fecha civil exacta en hora de El Salvador: hoy, mañana o pasado mañana.
 
 ## Configuración de la fuente
 
@@ -12,7 +12,9 @@ API deportiva con FastAPI. La cartelera y los mercados se obtienen de SportsGame
 
 El plan gratuito publicado tiene 2.500 objetos al mes, 10 solicitudes por minuto y actualización cada 10 minutos. El registro solicita tarjeta, pero el proveedor declara que el plan Amateur no genera cargos mientras no se actualice.
 
-La cobertura gratuita incluye ocho ligas: NFL, NBA, MLB, NHL, NCAA Football, NCAA Basketball, Champions League y MLS. No equivale a toda la cartelera mundial; la disponibilidad depende de la liga y el evento.
+La cobertura gratuita incluye ocho ligas: NFL, NBA, MLB, NHL, NCAA Football, NCAA Basketball, Champions League y MLS. No equivale a toda la cartelera mundial; la disponibilidad depende de la liga y el evento. El cliente sigue nextCursor para recorrer las páginas y, por defecto, permite hasta 10 por consulta; si se alcanza ese máximo, la API marca el resultado como potencialmente incompleto.
+
+GanaPlay no está conectado directamente en este repositorio. El feed exportable de Altenar que se ha podido documentar es B2B y requiere un importer ID asignado al operador y autorización de IP. La integración directa necesita las credenciales y datos de acceso oficiales del operador; el backend no simula ni extrae cuotas de una sesión privada.
 
 ## Variables
 
