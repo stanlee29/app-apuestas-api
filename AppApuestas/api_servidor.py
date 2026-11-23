@@ -2,12 +2,13 @@
 import os
 import re
 import time
+import hmac
 from datetime import date, datetime, timedelta, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -28,12 +29,17 @@ from thesportsdb_data import TheSportsDBClient, TheSportsDBError, thesportsdb_st
 from statsbomb_open_data import StatsBombOpenData, StatsBombDataError, statsbomb_status
 from modelos_futbol import predict_from_matches, evaluate_walk_forward
 from modelos_mercados_statsbomb import predict_match_markets
+from nba_research import (
+    NBAResearchError, nba_status, scoreboard as nba_scoreboard,
+    game_shots as nba_game_shots, game_logs as nba_game_logs,
+    teams as nba_teams, team_roster as nba_team_roster,
+)
 
 BASE_DIR = Path(__file__).resolve().parent
 DATOS_DIR = BASE_DIR / "datos"
 STATIC_DIR = BASE_DIR / "static"
 INDEX_FILE = STATIC_DIR / "index.html"
-VERSION = "1.0.9"
+VERSION = "1.1.0"
 EVENT_CACHE_SECONDS = max(60, int(os.getenv("SPORTSGAMEODDS_CACHE_SECONDS", "600")))
 MARKET_CACHE_SECONDS = max(60, int(os.getenv("SPORTSGAMEODDS_MARKET_CACHE_SECONDS", "600")))
 
@@ -251,11 +257,13 @@ def research_status():
             "pitchapi": pitchapi_status(),
             "statsbomb_open_data": statsbomb_status(),
             "thesportsdb": thesportsdb_status(),
+            "nba": nba_status(),
         },
         "capacidades": {
             "cartelera_y_cuotas": "SportsGameOdds",
             "xg_remates_h2h_heatmaps": "PitchAPI (requiere clave gratuita)",
             "eventos_alineaciones_estadisticas_auxiliares": "TheSportsDB API pública gratuita",
+            "nba_cartelera_tiros_historial_rosters": "nba_api (NBA.com Stats; disponibilidad sujeta a límites del proveedor)",
         },
     }
 
@@ -525,6 +533,73 @@ def research_statsbomb_backtest(
     return result
 
 
+@app.get("/api/v1/research/nba/status", tags=["Investigación NBA"])
+def research_nba_status():
+    return nba_status()
+
+
+@app.get("/api/v1/research/nba/scoreboard", tags=["Investigación NBA"])
+def research_nba_scoreboard(
+    fecha: date | None = Query(default=None, description="Fecha YYYY-MM-DD; por defecto hoy en El Salvador"),
+):
+    selected_date = fecha or datetime.now(EL_SALVADOR_TZ).date()
+    try:
+        return nba_scoreboard(selected_date.isoformat())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except NBAResearchError as exc:
+        raise HTTPException(status_code=exc.status_code, detail={"codigo": exc.code, "mensaje": str(exc)}) from exc
+
+
+@app.get("/api/v1/research/nba/teams", tags=["Investigación NBA"])
+def research_nba_teams():
+    try:
+        return nba_teams()
+    except NBAResearchError as exc:
+        raise HTTPException(status_code=exc.status_code, detail={"codigo": exc.code, "mensaje": str(exc)}) from exc
+
+
+@app.get("/api/v1/research/nba/teams/{team_id}/roster", tags=["Investigación NBA"])
+def research_nba_team_roster(team_id: int, season: str = Query(default="2026-27", max_length=7)):
+    try:
+        return nba_team_roster(team_id, season=season)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except NBAResearchError as exc:
+        raise HTTPException(status_code=exc.status_code, detail={"codigo": exc.code, "mensaje": str(exc)}) from exc
+
+
+@app.get("/api/v1/research/nba/games/{game_id}/shots", tags=["Investigación NBA"])
+def research_nba_game_shots(
+    game_id: str,
+    team_id: int = Query(default=0, ge=0),
+    player_id: int = Query(default=0, ge=0),
+    season: str = Query(default="2026-27", max_length=7),
+    season_type: str = Query(default="Regular Season", max_length=30),
+):
+    try:
+        return nba_game_shots(game_id, team_id=team_id, player_id=player_id, season=season, season_type=season_type)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except NBAResearchError as exc:
+        raise HTTPException(status_code=exc.status_code, detail={"codigo": exc.code, "mensaje": str(exc)}) from exc
+
+
+@app.get("/api/v1/research/nba/logs", tags=["Investigación NBA"])
+def research_nba_logs(
+    season: str = Query(default="2026-27", max_length=7),
+    entity: str = Query(default="T", pattern="^(T|P)$"),
+    season_type: str = Query(default="Regular Season", max_length=30),
+    limit: int = Query(default=200, ge=1, le=1000),
+):
+    try:
+        return nba_game_logs(season=season, entity=entity, season_type=season_type, limit=limit)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except NBAResearchError as exc:
+        raise HTTPException(status_code=exc.status_code, detail={"codigo": exc.code, "mensaje": str(exc)}) from exc
+
+
 @app.get("/api/v1/sports", tags=["Proveedor"])
 def sports():
     return {
@@ -659,7 +734,14 @@ def predict(
 
 
 @app.post("/actualizar-datos", tags=["Administración"])
-def update_historical_data():
+def update_historical_data(x_admin_key: str | None = Header(default=None, alias="X-Admin-Key")):
+    # Endpoint costoso: permanece desactivado hasta configurar una clave privada.
+    admin_key = os.getenv("ADMIN_API_KEY", "").strip()
+    if not admin_key:
+        raise HTTPException(status_code=404, detail="La actualización administrativa está desactivada.")
+    if not x_admin_key or not hmac.compare_digest(x_admin_key, admin_key):
+        raise HTTPException(status_code=403, detail="Clave administrativa no válida.")
+
     import subprocess
     import sys
 
