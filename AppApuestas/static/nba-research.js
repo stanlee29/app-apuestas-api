@@ -113,7 +113,7 @@
   }
   function renderShotChart(data){
     const shots=Array.isArray(data.tiros)?data.tiros:[];
-    const valid=shots.filter(s=>Number.isFinite(Number(s.LOC_X))&&Number.isFinite(Number(s.LOC_Y))&&Number(s.LOC_X)>=-250&&Number(s.LOC_X)<=250&&Number(s.LOC_Y)>=-60&&Number(s.LOC_Y)<=430);
+    const valid=shots.filter(s=>s.LOC_X!=null&&s.LOC_X!==""&&s.LOC_Y!=null&&s.LOC_Y!==""&&Number.isFinite(Number(s.LOC_X))&&Number.isFinite(Number(s.LOC_Y))&&Number(s.LOC_X)>=-250&&Number(s.LOC_X)<=250&&Number(s.LOC_Y)>=-60&&Number(s.LOC_Y)<=430);
     if(!valid.length)return '<div class="pitch-empty">NBA.com no devolvió tiros con coordenadas para este filtro.</div>';
     const marks=valid.map(shot=>{
       const x=Number(shot.LOC_X)+250;
