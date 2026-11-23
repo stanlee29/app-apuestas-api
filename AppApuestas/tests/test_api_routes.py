@@ -1,6 +1,7 @@
 import os
 import unittest
 from unittest.mock import patch
+from datetime import date
 
 from fastapi import HTTPException
 
@@ -30,6 +31,38 @@ class APIRouteTests(unittest.TestCase):
             "/api/v1/research/football/open-data/team-history",
         }
         self.assertTrue(expected.issubset(paths))
+
+    def test_cartelera_accepts_tomorrow_as_an_exact_local_date(self):
+        fecha = date(2026, 11, 24)
+        mocked = {
+            "eventos": [],
+            "fuente": "SportsGameOdds",
+            "ventana_consulta": {
+                "fecha_inicio_local": "2026-11-24",
+                "fecha_fin_local": "2026-11-24",
+                "dias_incluidos": 1,
+                "zona_horaria": "America/El_Salvador",
+            },
+            "ligas_consultadas": ["UEFA_CHAMPIONS_LEAGUE", "MLS"],
+            "paginacion_completa": True,
+            "paginas_consultadas": 1,
+        }
+        with patch.object(api_servidor, "_get_events_cached", return_value=mocked) as request:
+            result = api_servidor.cartelera(api_servidor.SportEnum.futbol, fecha=fecha)
+
+        self.assertEqual(request.call_args.kwargs["match_date"], fecha)
+        self.assertEqual(result["fecha_solicitada"], "2026-11-24")
+        self.assertEqual(result["fecha_inicio_local"], "2026-11-24")
+        self.assertEqual(result["fecha_fin_local"], "2026-11-24")
+        self.assertEqual(result["dias_incluidos"], 1)
+
+    def test_cartelera_rejects_dates_after_the_next_two_days(self):
+        with self.assertRaises(HTTPException) as context:
+            api_servidor.cartelera(
+                api_servidor.SportEnum.futbol,
+                fecha=date(2026, 11, 26),
+            )
+        self.assertEqual(context.exception.status_code, 400)
 
     def test_admin_endpoint_is_disabled_without_secret(self):
         with patch.dict(os.environ, {"ADMIN_API_KEY": ""}, clear=False):
