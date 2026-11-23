@@ -335,7 +335,7 @@ def game_boxscore(game_id: str) -> dict[str, Any]:
 
 
 def game_play_by_play(game_id: str, limit: int = 1000) -> dict[str, Any]:
-    if not re.fullmatch(r"\\d{8,12}", game_id):
+    if not re.fullmatch(r"\d{8,12}", game_id):
         raise ValueError("game_id NBA debe ser un identificador numérico válido.")
     limit = max(1, min(2500, int(limit)))
     key = f"pbp:{game_id}:{limit}"
