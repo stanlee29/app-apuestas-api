@@ -2,10 +2,38 @@ import unittest
 
 import pandas as pd
 
-from nba_research import dataframe_records, game_shots, game_boxscore, game_play_by_play, season_stats, team_roster
+from nba_research import dataframe_records, game_shots, game_boxscore, game_play_by_play, season_stats, team_roster, normalize_scoreboard_rows
 
 
 class NBAResearchTests(unittest.TestCase):
+    def test_scoreboard_combines_header_and_line_scores_into_home_away(self):
+        headers = [{
+            "gameId": "0022600011",
+            "gameCode": "20261122/NYKBOS",
+            "gameStatusText": "Final",
+        }]
+        lines = [
+            {"gameId": "0022600011", "teamId": 2, "teamName": "Celtics",
+             "teamCity": "Boston", "teamTricode": "BOS", "score": 110},
+            {"gameId": "0022600011", "teamId": 1, "teamName": "Knicks",
+             "teamCity": "New York", "teamTricode": "NYK", "score": 102},
+        ]
+        games = normalize_scoreboard_rows(headers, lines)
+        self.assertEqual(games[0]["homeTeam"]["teamName"], "Celtics")
+        self.assertEqual(games[0]["awayTeam"]["teamName"], "Knicks")
+        self.assertEqual(games[0]["homeTeam"]["score"], 110)
+        self.assertEqual(games[0]["awayTeam"]["score"], 102)
+
+    def test_scoreboard_does_not_invent_sides_without_valid_game_code(self):
+        headers = [{"gameId": "0022600012", "gameCode": "no-team-code"}]
+        lines = [
+            {"gameId": "0022600012", "teamTricode": "AAA", "teamName": "A"},
+            {"gameId": "0022600012", "teamTricode": "BBB", "teamName": "B"},
+        ]
+        games = normalize_scoreboard_rows(headers, lines)
+        self.assertNotIn("homeTeam", games[0])
+        self.assertNotIn("awayTeam", games[0])
+
     def test_dataframe_records_normalizes_nan_and_limits(self):
         frame = pd.DataFrame([
             {"PLAYER_NAME": "Player A", "LOC_X": 12.5, "SHOT_MADE_FLAG": 1},
