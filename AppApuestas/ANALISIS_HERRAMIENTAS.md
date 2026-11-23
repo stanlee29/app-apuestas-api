@@ -133,7 +133,10 @@ El endpoint de equipo limita los partidos a fechas anteriores al encuentro consu
 - Se retiraron las tablas SQL y secretos de EdgeBet del proyecto histórico.
 - Se desprogramaron las tareas cron de EdgeBet y se retiraron sus funciones SQL.
 - Quedan cuatro Edge Functions antiguas de EdgeBet desplegadas con JWT desactivado. No se pudieron eliminar desde las herramientas conectadas; deben borrarse manualmente desde **Supabase Dashboard → Edge Functions**.
-- Tamaño de base comprobado tras la limpieza: aproximadamente **231 MB**, por debajo del límite de 500 MB del plan gratuito. Vigilar el crecimiento de snapshots y cuotas.
+- Tamaño de base comprobado tras la limpieza: **223 MB**, por debajo del límite de 500 MB del plan gratuito. Conteos remotos verificados: 79,163 resultados, 440,959 resúmenes de mercados, 3,383 métricas avanzadas, 153 identidades de equipos y 84 alias de eventos. Health advisor sin incidencias.
+- El proyecto principal antiguo de EdgeBet (`lrrtzrcmmjtukljgeqju`) se pausó correctamente y Supabase lo muestra como `INACTIVE`. Sus datos útiles ya se copiaron; su eliminación definitiva queda pendiente desde Dashboard → Settings → General → Delete project.
+- El proyecto usado para AppApuestas conserva todavía el nombre histórico `edgebet-historical`; cambiarlo manualmente a `app-apuestas-research` desde Settings → General.
+- La ejecución de cuotas compacta 821,636+ observaciones a 440,959 grupos de mercado. Se conservan apertura/cierre y rangos, no cada tick intermedio.
 
 Variables privadas en Render: `SUPABASE_URL`, `SUPABASE_SECRET_KEY` (recomendada) o `SUPABASE_SERVICE_ROLE_KEY` (legacy), `SUPABASE_RESEARCH_TABLE=research_snapshots` y `APP_MODEL_VERSION`. La URL y el nombre de tabla ya están configurados en Render. Para habilitar las consultas falta añadir `SUPABASE_SECRET_KEY` desde Settings → Environment de Render. No compartas esa clave por chat; no uses la publishable/anon key.
 
@@ -148,4 +151,5 @@ Variables privadas en Render: `SUPABASE_URL`, `SUPABASE_SECRET_KEY` (recomendada
 
 ## Validación pendiente
 
-La fuente de verdad de despliegues es Render y la de pruebas, GitHub Actions. Los trabajos de Actions han presentado fallos sin asignar runner (runner_id=0 y cero pasos ejecutados); esto no demuestra que el código haya fallado ni permite afirmar que las pruebas hayan pasado. Confirmar últimos deploys, logs y pruebas ejecutadas antes de declarar la versión verificada.
+La fuente de verdad de despliegues es Render y la de pruebas, GitHub Actions. GitHub Actions está configurado para ejecutar las pruebas Python y verificar sintaxis JS; los tres pasos usan acciones fijadas a SHA completo. En las últimas ejecuciones, sin embargo, GitHub terminó el job antes de asignar runner (runner_id=0, runner_name vacío y cero pasos). No se puede declarar la suite aprobada hasta corregir los permisos/política de Actions y observar pasos completados.
+En Settings → Actions → General, la política debe permitir las tres acciones oficiales fijadas en .github/workflows/tests.yml: checkout, setup-python y setup-node. Para política selectiva, añadir sus referencias SHA completas; mantener activa la protección de SHA completo.
