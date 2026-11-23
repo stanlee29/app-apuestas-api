@@ -1,7 +1,7 @@
 import os
 import unittest
 from unittest.mock import patch
-from datetime import date
+from datetime import date, timedelta
 
 from fastapi import HTTPException
 
@@ -33,13 +33,14 @@ class APIRouteTests(unittest.TestCase):
         self.assertTrue(expected.issubset(paths))
 
     def test_cartelera_accepts_tomorrow_as_an_exact_local_date(self):
-        fecha = date(2026, 11, 24)
+        today = api_servidor.datetime.now(api_servidor.EL_SALVADOR_TZ).date()
+        fecha = today + timedelta(days=1)
         mocked = {
             "eventos": [],
             "fuente": "SportsGameOdds",
             "ventana_consulta": {
-                "fecha_inicio_local": "2026-11-24",
-                "fecha_fin_local": "2026-11-24",
+                "fecha_inicio_local": fecha.isoformat(),
+                "fecha_fin_local": fecha.isoformat(),
                 "dias_incluidos": 1,
                 "zona_horaria": "America/El_Salvador",
             },
@@ -51,16 +52,16 @@ class APIRouteTests(unittest.TestCase):
             result = api_servidor.cartelera(api_servidor.SportEnum.futbol, fecha=fecha)
 
         self.assertEqual(request.call_args.kwargs["match_date"], fecha)
-        self.assertEqual(result["fecha_solicitada"], "2026-11-24")
-        self.assertEqual(result["fecha_inicio_local"], "2026-11-24")
-        self.assertEqual(result["fecha_fin_local"], "2026-11-24")
+        self.assertEqual(result["fecha_solicitada"], fecha.isoformat())
+        self.assertEqual(result["fecha_inicio_local"], fecha.isoformat())
+        self.assertEqual(result["fecha_fin_local"], fecha.isoformat())
         self.assertEqual(result["dias_incluidos"], 1)
 
     def test_cartelera_rejects_dates_after_the_next_two_days(self):
         with self.assertRaises(HTTPException) as context:
             api_servidor.cartelera(
                 api_servidor.SportEnum.futbol,
-                fecha=date(2026, 11, 26),
+                fecha=api_servidor.datetime.now(api_servidor.EL_SALVADOR_TZ).date() + timedelta(days=3),
             )
         self.assertEqual(context.exception.status_code, 400)
 
