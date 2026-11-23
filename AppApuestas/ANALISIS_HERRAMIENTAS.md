@@ -1,86 +1,108 @@
-# Evaluación de herramientas y fuentes para AppApuestas
+# Evaluación e integración de herramientas para AppApuestas
 
-Fecha de revisión: 22 de noviembre de 2026.
+**Revisión:** 23 de noviembre de 2026  
+**Repositorio:** https://github.com/stanlee29/app-apuestas-api
 
-## Resumen ejecutivo
+## Estado ejecutivo
 
-La prioridad no es acumular scrapers, sino construir un motor de investigación con datos trazables, fechas de corte y cobertura declarada. La aplicación ya cuenta con PitchAPI, StatsBomb Open Data, SportsGameOdds y TheSportsDB. La mayor mejora inmediata consiste en aprovechar los campos que ya llegan de PitchAPI antes de añadir nuevas dependencias.
+AppApuestas ya integra fuentes distintas por deporte. La regla es no mezclar metodologías ni fabricar estadísticas que el proveedor no publica. Cada bloque debe mostrar fuente, temporada, fecha de consulta y cobertura. Los conectores con scraping externo se mantienen opcionales y sujetos a los términos del proveedor.
 
-## Fuentes que ya están conectadas
-
-| Fuente | Uso correcto | Límites |
+| Deporte / función | Fuente principal | Estado |
 |---|---|---|
-| PitchAPI | Calendario, resultados por liga/temporada, tiros con xG y coordenadas, estadísticas individuales y de equipo, mapas 16x12, red de pases, momentum, eventos, H2H y analítica avanzada | Los bloques avanzados no existen para todos los partidos. Una respuesta ANALYTICS_UNAVAILABLE significa falta de cobertura analítica, no un fallo del partido |
-| StatsBomb Open Data | Investigación histórica con eventos, tiros, xG, mapas de actividad, secuencias y backtesting para competiciones/temporadas publicadas | No es un feed en vivo ni representa las plantillas actuales de todas las ligas. Requiere atribución a StatsBomb |
-| SportsGameOdds | Cartelera y mercados/cuotas según deporte y plan de la cuenta | Hay que controlar cuota mensual y frecuencia de refresco del plan |
-| TheSportsDB | Segunda referencia para determinados eventos, alineaciones y datos auxiliares | La llave pública compartida se puede saturar y la cobertura varía; no debe ser fuente principal |
+| Fútbol: cartelera y cuotas | SportsGameOdds | Conectado |
+| Fútbol: fixtures, xG, remates, heatmaps, jugadores, alineaciones, H2H, momentum, redes de pases y analítica avanzada | PitchAPI | Conectado; cobertura depende del partido |
+| Fútbol: eventos y alineaciones auxiliares | TheSportsDB | Auxiliar; clave pública compartida con límites |
+| Fútbol: eventos históricos | StatsBomb Open Data | Conectado |
+| Fútbol: resultados históricos abiertos | schoChastics football-data | Adaptador opcional; descarga manual |
+| NBA: calendario, tiros, game logs y rosters | nba_api / NBA.com Stats | Panel y endpoints conectados; sujeto a bloqueos del proveedor |
+| NFL: play-by-play, schedule, rosters, lesiones y depth charts | nflreadpy / nflverse | Código y endpoints añadidos; dependencia opcional |
+| MLB: Statcast, pitcheos y métricas de contacto | pybaseball / Baseball Savant | Código y endpoints añadidos; dependencia opcional |
+| Historial persistente | Supabase Postgres / REST | Adaptador y migración listos; falta configurar una base de AppApuestas |
 
-## Mejoras aplicadas en Research
+## Cambios ya incorporados
 
-La pantalla consume datos que el backend ya descargaba y ahora agrega:
+### Fútbol / Research
 
-- Mapa de tiros con ubicación, jugador, minuto y tamaño relativo al xG.
-- Evolución acumulada del xG de ambos equipos.
-- Mapas de actividad/heatmaps de equipo y jugador.
-- Redes de pases para los onces iniciales, con conexiones y centralización.
-- Curva de momentum, cuando existe.
-- Métricas avanzadas de equipo: xT, VAEP, pases progresivos, conducciones, creación, defensa, PPDA, territorio y tempo cuando el proveedor las entrega.
-- Comparativa avanzada por jugador: VAEP, xT, progresión, creación y defensa.
-- Cronología de goles, tarjetas, sustituciones y penaltis.
-- Forma reciente: últimos cinco partidos finalizados previos al encuentro, de la temporada seleccionada; no usa resultados futuros.
+La pantalla muestra, cuando PitchAPI tiene cobertura:
 
-Las visualizaciones deben mostrar un estado vacío explícito cuando el proveedor no entrega el bloque. Nunca se deben rellenar huecos con estadísticas inferidas como si fueran datos oficiales.
+- Mapa de remates, jugador, minuto, resultado y valor xG.
+- Evolución acumulada de xG.
+- Mapas de actividad de equipo y jugadores.
+- Redes de pases y centralización.
+- Momentum por minuto.
+- Analítica avanzada de equipo y jugador: xT, VAEP, pases y conducciones progresivas, creación, métricas defensivas, PPDA, territorio y tempo.
+- Estadísticas de partido, jugadores, alineaciones y cronología.
+- Últimos cinco resultados anteriores al encuentro, dentro de la temporada seleccionada.
 
-### Interpretación de mapas y métricas
+El cliente PitchAPI trata los bloques avanzados como opcionales. Si un partido no tiene eventos/analítica avanzada, conserva el registro principal y devuelve advertencias y una lista de campos sin cobertura. Las respuestas 404 opcionales se cachean. El limitador local reduce las peticiones después de recibir HTTP 429.
 
-PitchAPI expresa las coordenadas de tiros en metros sobre un campo de 105 x 68 y normaliza la dirección para que el equipo que remata ataque hacia x=105. No hay que girar manualmente los tiros visitantes. Sus mapas de actividad usan una matriz 16 x 12; para comparar ambos equipos en un campo común se solicita el marco home_ltr, que ya ajusta la orientación visitante.
+**Coordenadas:** los tiros PitchAPI se normalizan en un terreno de 105 × 68 con el equipo atacando hacia x=105. No se gira el visitante en el navegador. Un heatmap de acciones no es tracking continuo ni GPS. La red de pases depende del feed de eventos y su ventana puede limitarse al once inicial.
 
-La red de pases describe la circulación del once inicial hasta la primera sustitución. Los receptores pueden ser inferidos y algunas conexiones pueden faltar. No debe interpretarse como tracking continuo.
+**Métricas:** xG valora la ocasión de remate; xT y VAEP valoran acciones. No se mezclan métricas de proveedores distintos como si fueran equivalentes. Los valores vacíos no deben convertirse en ceros.
 
-xG, xT, VAEP, PPDA y momentum son métricas distintas. No deben mezclarse entre proveedores ni tratarse como equivalentes. En particular, xT y VAEP valoran acciones, mientras que xG valora la calidad de una ocasión de remate.
+### StatsBomb
 
-## Repositorios evaluados
+Se conserva para investigación histórica de eventos, tiros, coordenadas, xG, actividad, corners, faltas, tarjetas, H2H y backtesting. No es una cartelera actual ni una fuente de plantillas vigentes de todas las ligas. Los análisis derivados deben atribuirse a StatsBomb. Los bloques de alineación no disponibles se cachean como ausentes.
 
-| Repositorio | Aporte potencial | Decisión |
+### NBA
+
+El paquete nba_api ya está en las dependencias obligatorias. Se añadieron rutas y un panel con:
+- Cartelera y marcadores por fecha.
+- Catálogo de equipos.
+- Rosters consultados por temporada NBA.
+- Shot chart por partido, filtrable por equipo y por jugador.
+- Game logs de equipos y jugadores.
+
+Las coordenadas NBA LOC_X/LOC_Y son específicas de baloncesto y no se reutilizan con las escalas de fútbol. El cliente consulta NBA.com Stats, que puede limitar o cambiar sus endpoints; si bloquea la consulta, se informa el error sin inventar datos.
+
+### NFL
+
+Se añadieron nfl_research.py, rutas y panel para calendario, play-by-play por game_id, rosters semanales, informes de lesiones y depth charts. Usa nflreadpy, pero esta dependencia queda en requirements-optional.txt y no se instala en Render automáticamente. Los datos de nflverse tienen licencias por dataset: la mayoría CC BY 4.0 y FTN charting CC BY-SA 4.0. La respuesta debe conservar atribución y distinguir temporada/semana. No tratar el PBP como feed en directo.
+
+### MLB
+
+Se añadieron mlb_research.py, rutas y panel Statcast: lances individuales, tipo y descripción del lanzamiento, velocidad, spin, ubicación plate_x/plate_z, velocidad de salida, ángulo de bateo y métricas esperadas cuando estén publicadas. Usa pybaseball, también opcional. Las consultas se limitan a tres días y a 5.000 registros de respuesta. La licencia MIT del paquete no otorga automáticamente permiso para redistribuir datos de Baseball Savant, FanGraphs o Baseball Reference.
+
+## Repositorios examinados
+
+| Proyecto | Aporte | Decisión |
 |---|---|---|
-| [mplsoccer](https://github.com/andrewRowlinson/mplsoccer) | Campos, heatmaps, mapas de tiros/pases, radares, hexbins y gráficos de fútbol; licencia MIT | Recomendado como herramienta para informes PNG/PDF o análisis offline. La interfaz web usa SVG para evitar agregar Matplotlib y peso de dependencias al servicio gratuito |
-| [kloppy](https://github.com/PySport/kloppy) | Estandariza formatos de datos de eventos y tracking de distintos proveedores y sistemas de coordenadas; BSD-3-Clause | Recomendado si se incorpora una segunda fuente real de eventos/tracking. No es un proveedor de datos por sí mismo |
-| [socceraction](https://github.com/ML-KULeuven/socceraction) | Convierte eventos a SPADL y calcula VAEP/xT y ratings de acciones; MIT | Útil para validación independiente y experimento histórico. No se agrega ahora porque PitchAPI ya publica esas métricas y el repositorio declara un foco académico/reproducibilidad |
-| [EasySoccerData](https://github.com/manucabral/EasySoccerData) | README actual: módulos Sofascore y Promiedos; FBRef y Goaloo aparecen en desarrollo. El proyecto declara estar en desarrollo activo; código MIT | No activar como scraper general de producción. MIT cubre el código, no los datos de cada sitio. Verificar términos, cobertura y estabilidad de cada adaptador antes de automatizarlo |
-| [open-football](https://github.com/withqwerty/open-football) | Catálogo de datasets y herramientas de fútbol abierto; CC0 para el catálogo | Útil como índice de nuevos conjuntos de datos, no como API en vivo |
-| [nflreadpy](https://github.com/nflverse/nflreadpy) | Play-by-play, estadísticas por jugador/equipo, rosters, lesiones, depth charts, snap counts y Next Gen Stats | Recomendado para una fase NFL. La mayoría de datos nflverse son CC BY 4.0; FTN charting usa CC BY-SA 4.0 y requiere atribución/licencia separada |
-| [nba_api](https://github.com/swar/nba_api) | Estadísticas NBA.com, game logs, tiros con coordenadas, shot charts, box scores, play-by-play, WNBA/G League | Ya está en requirements.txt. Conviene crear un módulo real de investigación NBA y probar acceso desde Render; la disponibilidad del sitio externo no está garantizada |
-| [pybaseball](https://github.com/jldbc/pybaseball) | Statcast lanzamiento a lanzamiento, velocidad, spin, exit velocity, launch angle, métricas de bateadores/lanzadores | Recomendado para fase MLB. Es scraping de fuentes externas y los términos de Baseball Savant/FanGraphs/Baseball Reference se deben revisar antes de publicar datos |
-| [Football Analytics / StatsBomb demo](https://github.com/AlexandreMorel/Football-Analytics) | Ejemplo de visualizaciones de pases, tiros, heatmaps, xG timeline y radares con StatsBomb | Referencia visual/técnica; no conviene desplegar una segunda app Streamlit paralela a FastAPI/PWA |
+| [mplsoccer](https://github.com/andrewRowlinson/mplsoccer) | Campos, heatmaps, shot maps, pases, radar y gráficos; MIT | En requirements-optional.txt para informes offline. La UI usa SVG para reducir dependencias |
+| [kloppy](https://github.com/PySport/kloppy) | Modelo común para eventos y tracking y transformación de coordenadas; BSD-3-Clause | Opcional si se incorpora otro proveedor real de eventos/tracking |
+| [socceraction](https://github.com/ML-KULeuven/socceraction) | SPADL, VAEP, xT y valoración de acciones; MIT | Opcional para investigación y validación histórica; no duplica las métricas ya recibidas de PitchAPI |
+| [EasySoccerData](https://github.com/manucabral/EasySoccerData) | Adaptadores en evolución para SofaScore, Promiedos y otras webs | No se usa en producción. MIT cubre el código, no los datos ni los términos de cada sitio |
+| [open-football](https://github.com/withqwerty/open-football) | Catálogo CC0 de datasets y recursos abiertos | Índice de fuentes, no API en vivo |
+| [schochastics/football-data](https://github.com/schochastics/football-data) | Parquet con 1.237.935 resultados anunciados de 207 ligas y 20 torneos entre 1888 y 2023 | Adaptador y descarga manual opcional. ODC-BY exige atribución. Solo marcadores, no xG/eventos |
+| [nba_api](https://github.com/swar/nba_api) | Endpoints NBA.com: calendario, rosters, tiros, game logs, box score y play-by-play | Conectado; disponibilidad externa no garantizada |
+| [nflreadpy](https://github.com/nflverse/nflreadpy) | PBP, schedule, estadísticas de jugadores/equipos, rosters, lesiones y depth charts | Conector opcional añadido |
+| [pybaseball](https://github.com/jldbc/pybaseball) | Statcast y estadísticas de bateo/lanzamiento | Conector opcional añadido |
 
-## Fuentes adicionales revisadas y restricciones
+### Fuentes descartadas o restringidas
 
-- [schochastics/football-data](https://github.com/schochastics/football-data): archivo parquet con 1.237.935 resultados de 207 ligas domésticas y 20 torneos internacionales entre 1888 y 2023; incluye equipos, competición, fecha, goles y datos para identificar local/visitante. Licencia Open Data Commons Attribution (ODC-BY), por lo que requiere atribución. Es histórico de marcadores, no estadísticas de tiros ni feed actual; resulta útil como respaldo histórico cuando el identificador de equipo/torneo se normalice con cuidado.
-- [footballcsv](https://github.com/footballcsv): resultados CSV de dominio público para ligas como Inglaterra, España, Alemania, México, MLS y otros torneos. Útil para ampliar series históricas de resultados, no para xG, tracking o estadísticas detalladas por jugador.
+EasySoccerData no se activa como scraper general de producción: cada web tiene condiciones distintas y endpoints no oficiales pueden cambiar. football-data.co.uk no se incorpora para automatización o entrenamiento de IA sin autorización adicional; que un archivo esté disponible para descargar no concede derechos ilimitados.
 
+## Almacenamiento histórico
 
-- [football-data.co.uk](https://www.football-data.co.uk/): archivo atractivo de resultados y cuotas históricas. Sin embargo, su política vigente indica uso para personas particulares con descarga manual o automatización ligera (máximo dos veces por semana); excluye proyectos comerciales y proyectos de entrenamiento de IA que usen bots/scrapers. **No integrar ni entrenar AppApuestas con estos CSV sin una autorización/licencia distinta.** La licencia del archivo no debe suponerse por el hecho de que sea descargable.
-- [nflreadpy](https://github.com/nflverse/nflreadpy): candidato sólido para NFL. Descarga play-by-play, estadísticas de jugador/equipo, calendarios, rosters por semana, snap counts, Next Gen Stats, lesiones y depth charts. Código MIT; la mayoría de los datasets nflverse son CC BY 4.0, mientras FTN charting es CC BY-SA 4.0. Revisar la licencia concreta por dataset.
-- [nba_api](https://github.com/swar/nba_api): ya es dependencia del proyecto. Proporciona 130+ endpoints de NBA.com, incluidos game logs, shot charts, play-by-play, box scores, standings y live feeds sin API key. El código es MIT, pero los datos siguen sujetos a los términos de NBA.com; los endpoints no son un contrato de disponibilidad y pueden cambiar o bloquear peticiones.
-- [pybaseball](https://github.com/jldbc/pybaseball): candidato para Statcast/MLB, con lanzamientos individuales y métricas como velocidad de salida, ángulo de lanzamiento, velocidad/spin del pitcheo y datos de bateadores/lanzadores. El paquete es MIT, pero los datos proceden de terceros; hay que respetar los términos de Baseball Savant, FanGraphs y Baseball Reference según cada extracción.
+Se incorporó un adaptador opcional que guarda snapshots diarios de análisis de PitchAPI y StatsBomb en Supabase Postgres.
 
-## Qué conviene hacer a continuación
+- Migración: AppApuestas/sql/001_research_snapshots.sql.
+- Estado: GET /api/v1/research/storage/status.
+- Historial: GET /api/v1/research/storage/history/{match_id}?provider=pitchapi.
+- Variables privadas en Render: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY y SUPABASE_RESEARCH_TABLE.
 
-1. **Consolidar almacenamiento histórico persistente.** Ahora existen cachés en memoria, que se pierden al reiniciar o despertar el servicio gratuito. Para historiales de análisis, snapshots y backtesting hace falta un almacén persistente, por ejemplo PostgreSQL de Supabase en su plan gratuito, con claves de partido, proveedor, temporada, timestamp de consulta y versión de modelo. No se debe guardar ni exponer ninguna API key en el cliente.
-2. **Completar el historial de fútbol.** Añadir forma a 5/10 partidos, local/visitante, goles, xG, córners y tarjetas por partido cuando existan datos verificables. Calcular todo con una fecha de corte anterior al encuentro objetivo; H2H no debe sustituir la forma reciente.
-3. **Auditar cobertura y frescura.** Registrar para cada encuentro qué bloques existen: cuotas, lineup confirmado/provisional, tiros, xG, heatmap, red, eventos, jugadores, H2H y analítica avanzada. Mostrar la hora de la última actualización y no convertir null en cero.
-4. **Incorporar NBA y MLB con módulos propios.** Para NBA, reutilizar nba_api (ya está instalado) y validar endpoints de tiros/logs desde Render antes de usarlo en predicción. Para MLB, implementar Statcast por fecha/jugador con rangos cortos, caché y límites de consulta.
-5. **Añadir NFL mediante nflreadpy.** Priorizar PBP histórico, rosters semanales, snap counts, lesiones y depth charts; actualizar según la programación de las publicaciones. Es más apto para análisis prepartido e histórico que para marcador minuto a minuto.
-6. **Validar los modelos.** Backtesting cronológico por liga y temporada, sin fuga temporal; medir Brier Score, Log Loss y calibración por mercado. Los pronósticos no se deben publicar como “seguros” solo por presentar una probabilidad alta.
+**No se ha seleccionado ni modificado ningún proyecto Supabase para AppApuestas.** Para activarlo, hay que elegir el proyecto correcto, aplicar la migración y añadir su service-role key solo en Render. La clave nunca debe estar en la web ni en el APK.
 
-## Fuentes y licencias
+La caché en memoria se pierde al reiniciar o suspender el servicio. La persistencia funciona solo después de habilitar Supabase o instalar el dataset local en un volumen persistente.
 
-- PitchAPI: https://pitchapi.dev/ (referencia de endpoints, cobertura, coordenadas, mapas y analítica).
-- StatsBomb Open Data: https://github.com/statsbomb/open-data (atribución obligatoria).
-- nflverse: https://github.com/nflverse/nflreadpy y https://github.com/nflverse/nflverse-data.
-- pybaseball: https://github.com/jldbc/pybaseball; el código y los datos externos tienen condiciones diferentes.
-- Consultar las condiciones de uso de cada proveedor antes de usar scrapers o redistribuir datos.
+## Seguridad y estabilidad
 
-## Estado de validación
+- POST /actualizar-datos está desactivado por defecto. Requiere ADMIN_API_KEY en Render y el encabezado X-Admin-Key.
+- Las cachés se limitan por tiempo y cantidad para reducir consultas y memoria.
+- NFL, MLB, mplsoccer, kloppy, socceraction y DuckDB están en requirements-optional.txt. No se instalan durante el build normal.
+- El parquet histórico no se incluye en Git ni se descarga al iniciar la aplicación.
+- La API de cuotas y apuestas sigue siendo de lectura; la app no envía apuestas.
+- Los modelos históricos y mercados experimentales requieren backtesting cronológico por liga/mercado. Una probabilidad alta no implica certeza ni rentabilidad.
 
-La modificación de interfaz se encuentra versionada en GitHub y Render despliega automáticamente cada commit. El workflow de GitHub Actions está fallando antes de ejecutar los pasos (job sin runner asignado, sin pasos ejecutados); por tanto, ese fallo no demuestra que haya errores en el código ni permite afirmar que las pruebas hayan pasado. La verificación final del último deploy se debe leer desde Render.
+## Validación pendiente
+
+La fuente de verdad de despliegues es Render y la de pruebas, GitHub Actions. Los trabajos de Actions han presentado fallos sin asignar runner (runner_id=0 y cero pasos ejecutados); esto no demuestra que el código haya fallado ni permite afirmar que las pruebas hayan pasado. Confirmar últimos deploys, logs y pruebas ejecutadas antes de declarar la versión verificada.
