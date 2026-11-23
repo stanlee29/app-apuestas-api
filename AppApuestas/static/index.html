@@ -185,12 +185,19 @@
             <button id="nba-shots" class="research-button" type="button" disabled>Generar mapa de tiros</button>
             <button id="nba-roster" class="research-button secondary" type="button">Consultar roster</button>
             <button id="nba-logs" class="research-button secondary" type="button">Consultar historial</button>
+            <button id="nba-boxscore" class="research-button secondary" type="button">Box score + tracking</button>
+            <button id="nba-pbp" class="research-button secondary" type="button">Play-by-play</button>
+            <label class="research-field">Estadísticas NBA<select id="nba-season-entity" class="select-control"><option value="player">Jugadores</option><option value="team">Equipos</option></select></label>
+            <label class="research-field">Métrica<select id="nba-measure-type" class="select-control"><option value="Base">Base</option><option value="Advanced">Advanced</option><option value="Misc">Misc</option><option value="Four Factors">Four Factors</option><option value="Scoring">Scoring</option><option value="Opponent">Opponent</option></select></label>
+            <label class="research-field">Modo<select id="nba-per-mode" class="select-control"><option value="PerGame">Por partido</option><option value="Totals">Totales</option><option value="Per36">Por 36 min</option><option value="Per100Possessions">Por 100 posesiones</option></select></label>
+            <button id="nba-season-stats" class="research-button secondary" type="button">Estadísticas de temporada</button>
           </div>
           <div id="nba-status" class="research-status" role="status">NBA.com Stats · elige una fecha y consulta la cartelera para comenzar.</div>
           <div id="nba-output" class="research-output"></div>
           <div id="nba-shot-output" class="research-output"></div>
           <div id="nba-roster-output" class="research-output"></div>
           <div id="nba-log-output" class="research-output"></div>
+          <div id="nba-extra-output" class="research-output"></div>
           <p class="research-muted">Las estadísticas de partidos, tiros y rosters dependen de los datos publicados por NBA.com y pueden sufrir límites de acceso. Las listas de jugadores se consultan por temporada para reducir el riesgo de mostrar plantillas antiguas.</p>
         </details>
 
