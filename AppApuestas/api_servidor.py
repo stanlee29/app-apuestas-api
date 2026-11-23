@@ -798,11 +798,12 @@ def research_nfl_statistics(
     season: int | None = Query(default=None, ge=1999, le=2100),
     entity: str = Query(default="player", pattern="^(player|team)$"),
     summary_level: str = Query(default="week", pattern="^(week|reg|post|reg\\+post)$"),
+    week: int | None = Query(default=None, ge=1, le=25),
     limit: int = Query(default=2000, ge=1, le=10000),
 ):
     selected_season = season or (datetime.now(EL_SALVADOR_TZ).year if datetime.now(EL_SALVADOR_TZ).month >= 9 else datetime.now(EL_SALVADOR_TZ).year - 1)
     try:
-        return nfl_statistics(selected_season, entity=entity, summary_level=summary_level, limit=limit)
+        return nfl_statistics(selected_season, entity=entity, summary_level=summary_level, week=week, limit=limit)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except NFLResearchError as exc:
