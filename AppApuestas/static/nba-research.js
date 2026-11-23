@@ -226,7 +226,7 @@
   function renderRoster(data){
     const rows=Array.isArray(data.jugadores)?data.jugadores:[];
     if(!rows.length)return '<div class="pitch-empty">NBA.com no devolvió jugadores para el equipo y temporada seleccionados.</div>';
-    const cols=["PLAYER","NUM","POSITION","HEIGHT","WEIGHT","AGE","EXP","SCHOOL"];
+    const cols=["PLAYER","PLAYER_ID","NUM","POSITION","HEIGHT","WEIGHT","AGE","EXP","SCHOOL"];
     return '<div class="research-table-scroll"><table class="research-table"><thead><tr>'+cols.map(k=>'<th>'+esc(k)+'</th>').join("")+'</tr></thead><tbody>'+
       rows.map(player=>'<tr>'+cols.map(k=>'<td>'+esc(player[k]??"—")+'</td>').join("")+'</tr>').join("")+
       '</tbody></table></div>';
