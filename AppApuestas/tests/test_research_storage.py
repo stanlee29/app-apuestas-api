@@ -65,18 +65,25 @@ class ResearchStorageTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             ResearchStorage._team_or_filter('Real Madrid),source.eq.MLB')
 
-    def test_team_archive_maps_results_and_advanced_xg_without_filling_missing_values(self):
+    def test_team_archive_resolves_alias_and_preserves_home_away_orientation(self):
         storage = self._storage()
+        identities = [{
+            "provider": "FotMob",
+            "provider_team_id": "123",
+            "canonical_team_name": "Atlas FC",
+            "provider_team_name": "Atlético Atlas",
+            "confidence": 0.95,
+        }]
         results = [{
             "source": "Football-Data.co.uk",
             "competition_name": "E0",
             "season": "2025/26",
             "match_date": "2026-05-10",
-            "home_team": "Arsenal",
-            "away_team": "Chelsea",
-            "home_goals": 2,
-            "away_goals": 1,
-            "stats": {"hs": 18, "as": 9, "hst": 7, "ast": 3, "hc": 6, "ac": 2, "hy": 1, "ay": 2},
+            "home_team": "Chelsea",
+            "away_team": "Atlético Atlas",
+            "home_goals": 0,
+            "away_goals": 2,
+            "stats": {"hs": 7, "as": 19, "hst": 2, "ast": 8, "hc": 2, "ac": 9, "hy": 2, "ay": 1},
         }]
         advanced = [{
             "source": "american_soccer_analysis",
@@ -84,14 +91,14 @@ class ResearchStorageTests(unittest.TestCase):
             "competition_name": "MLS",
             "season_name": "2025",
             "match_date": "2025-09-01",
-            "home_team": "Arsenal",
-            "away_team": "Chelsea",
+            "home_team": "Atlético Atlas",
+            "away_team": "Rival",
             "home_score": 1,
             "away_score": 0,
             "home_xg": 1.7,
             "away_xg": 0.6,
-            "home_shots": 14,
-            "away_shots": 8,
+            "home_shots": None,
+            "away_shots": None,
             "home_shots_on_target": 6,
             "away_shots_on_target": 2,
             "home_corners": 5,
@@ -101,14 +108,18 @@ class ResearchStorageTests(unittest.TestCase):
             "home_red_cards": None,
             "away_red_cards": None,
         }]
-        with patch.object(storage, "_get_rows", side_effect=[results, advanced]) as get_rows:
-            data = storage.team_archive("Arsenal", before_date="2026-06-01", limit=5)
+        with patch.object(storage, "_get_rows", side_effect=[identities, results, advanced]) as get_rows:
+            data = storage.team_archive("Atlas FC", before_date="2026-06-01", limit=5)
 
+        self.assertEqual(data["nombres_alternativos"], ["Atlético Atlas"])
         self.assertEqual(data["resumen"]["ganados"], 1)
-        self.assertEqual(data["partidos"][0]["remates_favor"], 18)
+        self.assertEqual(data["partidos"][0]["condicion"], "visitante")
+        self.assertEqual(data["partidos"][0]["marcador"], "2-0")
+        self.assertEqual(data["partidos"][0]["remates_favor"], 19)
+        self.assertEqual(data["partidos"][0]["nombre_en_fuente"], "Atlético Atlas")
         self.assertEqual(data["metricas_avanzadas"][0]["xg_favor"], 1.7)
-        self.assertIsNone(data["metricas_avanzadas"][0]["rojas_favor"])
-        self.assertEqual(get_rows.call_count, 2)
+        self.assertIsNone(data["metricas_avanzadas"][0]["remates_favor"])
+        self.assertEqual(get_rows.call_count, 3)
 
     def test_market_archive_follows_canonical_event_alias(self):
         storage = self._storage()
