@@ -136,7 +136,7 @@
     return p;
   }
   function pitchChart(rows){
-    const valid=rows.filter(r=>Number.isFinite(Number(r.plate_x))&&Number.isFinite(Number(r.plate_z)));
+    const valid=rows.filter(r=>r.plate_x!=null&&r.plate_x!==""&&r.plate_z!=null&&r.plate_z!==""&&Number.isFinite(Number(r.plate_x))&&Number.isFinite(Number(r.plate_z)));
     if(!valid.length)return '<div class="pitch-empty">Statcast no devolvió coordenadas de ubicación de lanzamiento para el filtro.</div>';
     const dots=valid.map(r=>{
       const x=Math.max(30,Math.min(370,200+Number(r.plate_x)*48));
