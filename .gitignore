@@ -12,3 +12,8 @@ venv/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+
+# External historical parquet datasets and partial downloads
+data/open_football/*.parquet
+data/open_football/*.part
+data/open_football/*.ATTRIBUTION.txt
