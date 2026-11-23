@@ -115,7 +115,11 @@ def team_history(
     history = []
     wins = draws = losses = goals_for = goals_against = 0
     for row in rows:
-        is_home = str(row.get("home") or "").casefold() == clean_name.casefold()
+        is_home = (
+            str(row.get("home_ident") or "") == str(team_ident)
+            if team_ident is not None
+            else str(row.get("home") or "").casefold() == clean_name.casefold()
+        )
         own = int(row["gh"] if is_home else row["ga"])
         opponent_goals = int(row["ga"] if is_home else row["gh"])
         result = "D"
