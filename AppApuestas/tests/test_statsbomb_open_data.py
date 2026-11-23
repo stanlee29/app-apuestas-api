@@ -108,7 +108,7 @@ class StatsBombOpenDataTests(unittest.TestCase):
         ]
         client = StatsBombOpenData()
 
-        def fake_json(path, ttl=0):
+        def fake_json(path, ttl=0, optional=False):
             if path == "matches/9/281.json":
                 previous = dict(match)
                 previous.update({
