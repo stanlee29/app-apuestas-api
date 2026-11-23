@@ -88,7 +88,9 @@
     const rows=games.map(game=>{
       const g=gameInfo(game);
       const homeScore=g.homeScore==null?"—":g.homeScore, awayScore=g.awayScore==null?"—":g.awayScore;
-      const time=pick(game,["gameTimeUTC","gameEt","gameCode"],"");
+      const rawTime=pick(game,["gameTimeUTC","gameEt"],"");
+      let time=rawTime || pick(game,["gameCode"],"");
+      if(rawTime){const parsed=new Date(rawTime);if(!Number.isNaN(parsed.getTime()))time=new Intl.DateTimeFormat("es-SV",{timeZone:"America/El_Salvador",dateStyle:"short",timeStyle:"short"}).format(parsed);}
       return '<tr><td>'+esc(g.homeName)+'</td><td>'+esc(homeScore)+" - "+esc(awayScore)+'</td><td>'+esc(g.awayName)+'</td><td>'+esc(g.status)+'</td><td>'+esc(time)+'</td></tr>';
     }).join("");
     return '<section class="research-card"><h3>Cartelera NBA</h3><div class="research-table-scroll"><table class="research-table"><thead><tr><th>Local</th><th>Marcador</th><th>Visitante</th><th>Estado</th><th>Hora / código</th></tr></thead><tbody>'+rows+'</tbody></table></div></section>';
