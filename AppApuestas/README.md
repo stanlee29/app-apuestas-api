@@ -126,6 +126,9 @@ Endpoints:
 - `GET /api/v1/research/nba/teams/{team_id}/roster?season=YYYY-YY`: plantilla de la temporada seleccionada.
 - `GET /api/v1/research/nba/games/{game_id}/shots?season=YYYY-YY&team_id=0&player_id=0`: tiros con coordenadas, distancia, periodo y resultado.
 - `GET /api/v1/research/nba/logs?season=YYYY-YY&entity=T|P`: game logs por equipo o jugador.
+- `GET /api/v1/research/nba/games/{game_id}/boxscore`: estadísticas tradicionales, avanzadas y tracking por jugador/equipo cuando NBA.com las publica.
+- `GET /api/v1/research/nba/games/{game_id}/play-by-play`: cronología completa de acciones.
+- `GET /api/v1/research/nba/season-stats?season=YYYY-YY&entity=player|team&measure_type=Base|Advanced`: métricas de temporada, por partido o totales.
 
 El panel permite seleccionar el partido, filtrar el mapa por local/visitante o ID de jugador y consultar roster e historial. Si no se especifica temporada, se calcula la temporada NBA vigente. Las coordenadas LOC_X/LOC_Y son coordenadas nativas de tiros NBA y nunca se mezclan con el campo de fútbol. NBA.com puede limitar peticiones o cambiar endpoints; un fallo de origen se informa como error del proveedor, no se completa con datos inventados.
 
@@ -194,4 +197,4 @@ No se seleccionó ni modificó ninguna base Supabase existente. Hay que elegir e
 
 ### Versión
 
-API backend 1.1.0 o posterior.
+API backend 1.2.0 o posterior.
