@@ -1,6 +1,6 @@
 import unittest
 
-from ganaplay_public_feed import normalize_event, _decimal_price, _localize_datetime
+from ganaplay_public_feed import normalize_event, _decimal_price, _localize_datetime, is_read_only_method
 
 
 class GanaPlayPublicFeedTests(unittest.TestCase):
@@ -52,6 +52,14 @@ class GanaPlayPublicFeedTests(unittest.TestCase):
         self.assertEqual(_decimal_price("1.85"), 1.85)
         self.assertIsNone(_decimal_price("0.64"))
         self.assertIsNone(_decimal_price("suspended"))
+
+    def test_only_read_only_http_methods_are_allowed(self):
+        self.assertTrue(is_read_only_method("GET"))
+        self.assertTrue(is_read_only_method("HEAD"))
+        self.assertTrue(is_read_only_method("OPTIONS"))
+        for method in ("POST", "PUT", "PATCH", "DELETE", "CONNECT", "TRACE"):
+            with self.subTest(method=method):
+                self.assertFalse(is_read_only_method(method))
 
     def test_naive_datetime_is_assumed_el_salvador(self):
         utc_value, local_date = _localize_datetime("2026-11-24 01:00:00")
