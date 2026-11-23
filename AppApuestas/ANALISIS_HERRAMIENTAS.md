@@ -14,7 +14,7 @@ AppApuestas ya integra fuentes distintas por deporte. La regla es no mezclar met
 | Fútbol: eventos y alineaciones auxiliares | TheSportsDB | Auxiliar; clave pública compartida con límites |
 | Fútbol: eventos históricos | StatsBomb Open Data | Conectado |
 | Fútbol: resultados históricos abiertos | schoChastics football-data | Adaptador opcional; descarga manual |
-| NBA: calendario, tiros, game logs y rosters | nba_api / NBA.com Stats | Panel y endpoints conectados; sujeto a bloqueos del proveedor |
+| NBA: calendario, tiros, game logs y rosters | nba_api / NBA.com Stats | Panel y endpoints conectados para cartelera, rosters, tiros, box scores, métricas avanzadas, player tracking, play-by-play y estadísticas de temporada; sujeto a bloqueos del proveedor |
 | NFL: play-by-play, schedule, rosters, lesiones y depth charts | nflreadpy / nflverse | Código y endpoints añadidos; dependencia opcional |
 | MLB: Statcast, pitcheos y métricas de contacto | pybaseball / Baseball Savant | Código y endpoints añadidos; dependencia opcional |
 | Historial persistente | Supabase Postgres / REST | Adaptador y migración listos; falta configurar una base de AppApuestas |
