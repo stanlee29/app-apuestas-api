@@ -50,6 +50,13 @@
     const values={}; parts.forEach(p=>values[p.type]=p.value);
     return values.year+"-"+values.month+"-"+values.day;
   }
+  function currentSeason(){
+    const now=new Date();
+    const parts=new Intl.DateTimeFormat("en-US",{timeZone:"America/El_Salvador",year:"numeric",month:"numeric"}).formatToParts(now);
+    const values={};parts.forEach(p=>values[p.type]=Number(p.value));
+    const start=values.month>=10?values.year:values.year-1;
+    return start+"-"+String((start+1)%100).padStart(2,"0");
+  }
   function fillGames(games){
     const select=$("nba-game");
     const options=games.map(game=>{
@@ -191,6 +198,7 @@
   function init(){
     if(!$("nba-research")||!window.fetch)return;
     $("nba-date").value=localDate();
+    $("nba-season").value=currentSeason();
     $("nba-load").addEventListener("click",loadScoreboard);
     $("nba-game").addEventListener("change",selectGame);
     $("nba-shots").addEventListener("click",loadShots);
