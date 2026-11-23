@@ -19,7 +19,13 @@ from typing import Any
 from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
-from playwright.async_api import async_playwright, Error as PlaywrightError
+try:
+    from playwright.async_api import async_playwright, Error as PlaywrightError
+except ImportError:  # Playwright is only needed by the dedicated scraper workflow.
+    async_playwright = None
+
+    class PlaywrightError(RuntimeError):
+        pass
 
 EL_SALVADOR = ZoneInfo("America/El_Salvador")
 DEFAULT_URLS = ("https://ganaplay.sv/Home", "https://ganaplay.sv/")
@@ -314,6 +320,11 @@ def _date_window(days: int) -> tuple[date, date]:
 
 
 async def collect_public_feed(urls: list[str], days: int, wait_seconds: float) -> dict[str, Any]:
+    if async_playwright is None:
+        raise RuntimeError(
+            "Falta Playwright. Instálalo con: pip install -r requirements-scraper.txt "
+            "y luego ejecuta: python -m playwright install chromium"
+        )
     observed_responses: list[dict[str, Any]] = []
     request_counts: Counter[str] = Counter()
     blocked_methods: Counter[str] = Counter()
