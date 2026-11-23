@@ -49,10 +49,17 @@ INDEX_FILE = STATIC_DIR / "index.html"
 VERSION = "1.1.0"
 EVENT_CACHE_SECONDS = max(60, int(os.getenv("SPORTSGAMEODDS_CACHE_SECONDS", "600")))
 MARKET_CACHE_SECONDS = max(60, int(os.getenv("SPORTSGAMEODDS_MARKET_CACHE_SECONDS", "600")))
+EVENT_CACHE_MAX_ENTRIES = 250
+MARKET_CACHE_MAX_ENTRIES = 1500
 
 _event_cache: dict[str, tuple[float, dict[str, Any]]] = {}
 _market_cache: dict[str, tuple[float, dict[str, Any]]] = {}
 _model_data_cache: tuple[float, dict[str, Any]] | None = None
+
+
+def _trim_cache(cache: dict[str, Any], max_entries: int) -> None:
+    while len(cache) > max_entries:
+        cache.pop(next(iter(cache)), None)
 
 
 class SportEnum(str, Enum):
@@ -111,6 +118,7 @@ def _get_events_cached(sport: str, days: int, live: bool | None = None) -> dict[
 
     result["cache_segundos"] = EVENT_CACHE_SECONDS
     _event_cache[key] = (now, result)
+    _trim_cache(_event_cache, EVENT_CACHE_MAX_ENTRIES)
     for event in result.get("eventos", []):
         event_id = str(event.get("evento_id") or "")
         if event_id:
@@ -121,6 +129,7 @@ def _get_events_cached(sport: str, days: int, live: bool | None = None) -> dict[
                 "mercados": event.get("mercados", []),
                 "uso": result.get("uso", {}),
             })
+    _trim_cache(_market_cache, MARKET_CACHE_MAX_ENTRIES)
     return result
 
 
@@ -137,6 +146,7 @@ def _get_markets_cached(event_id: str) -> dict[str, Any]:
 
     result["cache_segundos"] = MARKET_CACHE_SECONDS
     _market_cache[event_id] = (now, result)
+    _trim_cache(_market_cache, MARKET_CACHE_MAX_ENTRIES)
     return result
 
 
