@@ -51,7 +51,7 @@ BASE_DIR = Path(__file__).resolve().parent
 DATOS_DIR = BASE_DIR / "datos"
 STATIC_DIR = BASE_DIR / "static"
 INDEX_FILE = STATIC_DIR / "index.html"
-VERSION = "1.2.0"
+VERSION = "1.3.0"
 EVENT_CACHE_SECONDS = max(60, int(os.getenv("SPORTSGAMEODDS_CACHE_SECONDS", "600")))
 MARKET_CACHE_SECONDS = max(60, int(os.getenv("SPORTSGAMEODDS_MARKET_CACHE_SECONDS", "600")))
 EVENT_CACHE_MAX_ENTRIES = 250
@@ -294,7 +294,8 @@ def research_status():
             "nba_cartelera_tiros_historial_rosters": "nba_api (NBA.com Stats; disponibilidad sujeta a límites del proveedor)",
             "nfl_play_by_play_rosters_lesiones": "nflreadpy opcional (no instalado en producción base)",
             "mlb_statcast": "pybaseball opcional (no instalado en producción base)",
-            "historial_persistente": "Supabase REST (desactivado hasta configurar credenciales y migración)",
+            "historial_persistente": "Supabase (resultados históricos, xG cuando existe, equivalencias de equipos y snapshots)",
+            "archivo_cuotas_historicas": "Supabase (apertura/cierre y rango de precios; no conserva cada tick)",
         },
     }
 
@@ -405,6 +406,43 @@ def research_storage_history(
     except ResearchStorageError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     return {"provider": provider, "match_id": match_id, "total_snapshots": len(rows), "historial": rows}
+
+
+@app.get("/api/v1/research/archive/teams/{team_name}", tags=["Historial"])
+def research_archive_team_history(
+    team_name: str,
+    before_date: date | None = Query(default=None, description="Solo partidos anteriores a esta fecha YYYY-MM-DD"),
+    limit: int = Query(default=5, ge=1, le=20),
+):
+    storage = ResearchStorage()
+    if not storage.configured:
+        raise HTTPException(status_code=503, detail="Supabase no está configurado en Render.")
+    try:
+        return storage.team_archive(
+            team_name,
+            before_date=before_date.isoformat() if before_date else None,
+            limit=limit,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except ResearchStorageError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/api/v1/research/archive/events/{event_id}/markets", tags=["Historial"])
+def research_archive_event_markets(
+    event_id: str,
+    limit: int = Query(default=50, ge=1, le=100),
+):
+    storage = ResearchStorage()
+    if not storage.configured:
+        raise HTTPException(status_code=503, detail="Supabase no está configurado en Render.")
+    try:
+        return storage.market_archive(event_id, limit=limit)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except ResearchStorageError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 @app.get("/api/v1/research/football/matches/{match_id}/live", tags=["Investigación"])
