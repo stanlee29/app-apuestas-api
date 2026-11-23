@@ -34,6 +34,12 @@ from nba_research import (
     game_shots as nba_game_shots, game_logs as nba_game_logs,
     teams as nba_teams, team_roster as nba_team_roster,
 )
+from nfl_research import (
+    NFLResearchError, nfl_status, schedules as nfl_schedules,
+    play_by_play as nfl_play_by_play, weekly_rosters as nfl_weekly_rosters,
+    injuries as nfl_injuries, depth_charts as nfl_depth_charts,
+)
+from mlb_research import MLBResearchError, mlb_status, statcast as mlb_statcast
 
 BASE_DIR = Path(__file__).resolve().parent
 DATOS_DIR = BASE_DIR / "datos"
@@ -258,6 +264,8 @@ def research_status():
             "statsbomb_open_data": statsbomb_status(),
             "thesportsdb": thesportsdb_status(),
             "nba": nba_status(),
+            "nfl": nfl_status(),
+            "mlb": mlb_status(),
         },
         "capacidades": {
             "cartelera_y_cuotas": "SportsGameOdds",
@@ -597,6 +605,108 @@ def research_nba_logs(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except NBAResearchError as exc:
+        raise HTTPException(status_code=exc.status_code, detail={"codigo": exc.code, "mensaje": str(exc)}) from exc
+
+
+@app.get("/api/v1/research/nfl/status", tags=["Investigación NFL"])
+def research_nfl_status():
+    return nfl_status()
+
+
+@app.get("/api/v1/research/nfl/schedule", tags=["Investigación NFL"])
+def research_nfl_schedule(
+    season: int | None = Query(default=None, ge=1999, le=2100),
+    week: int | None = Query(default=None, ge=1, le=25),
+    limit: int = Query(default=300, ge=1, le=1000),
+):
+    selected_season = season or (datetime.now(EL_SALVADOR_TZ).year if datetime.now(EL_SALVADOR_TZ).month >= 9 else datetime.now(EL_SALVADOR_TZ).year - 1)
+    try:
+        return nfl_schedules(selected_season, week=week, limit=limit)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except NFLResearchError as exc:
+        raise HTTPException(status_code=exc.status_code, detail={"codigo": exc.code, "mensaje": str(exc)}) from exc
+
+
+@app.get("/api/v1/research/nfl/games/{game_id}/pbp", tags=["Investigación NFL"])
+def research_nfl_play_by_play(
+    game_id: str,
+    season: int | None = Query(default=None, ge=1999, le=2100),
+    limit: int = Query(default=1500, ge=1, le=5000),
+):
+    selected_season = season or (datetime.now(EL_SALVADOR_TZ).year if datetime.now(EL_SALVADOR_TZ).month >= 9 else datetime.now(EL_SALVADOR_TZ).year - 1)
+    try:
+        return nfl_play_by_play(game_id, selected_season, limit=limit)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except NFLResearchError as exc:
+        raise HTTPException(status_code=exc.status_code, detail={"codigo": exc.code, "mensaje": str(exc)}) from exc
+
+
+@app.get("/api/v1/research/nfl/rosters", tags=["Investigación NFL"])
+def research_nfl_rosters(
+    season: int | None = Query(default=None, ge=2002, le=2100),
+    week: int | None = Query(default=None, ge=1, le=25),
+    limit: int = Query(default=1500, ge=1, le=5000),
+):
+    selected_season = season or (datetime.now(EL_SALVADOR_TZ).year if datetime.now(EL_SALVADOR_TZ).month >= 3 else datetime.now(EL_SALVADOR_TZ).year - 1)
+    try:
+        return nfl_weekly_rosters(selected_season, week=week, limit=limit)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except NFLResearchError as exc:
+        raise HTTPException(status_code=exc.status_code, detail={"codigo": exc.code, "mensaje": str(exc)}) from exc
+
+
+@app.get("/api/v1/research/nfl/injuries", tags=["Investigación NFL"])
+def research_nfl_injuries(
+    season: int | None = Query(default=None, ge=2009, le=2100),
+    limit: int = Query(default=1000, ge=1, le=5000),
+):
+    selected_season = season or (datetime.now(EL_SALVADOR_TZ).year if datetime.now(EL_SALVADOR_TZ).month >= 3 else datetime.now(EL_SALVADOR_TZ).year - 1)
+    try:
+        return nfl_injuries(selected_season, limit=limit)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except NFLResearchError as exc:
+        raise HTTPException(status_code=exc.status_code, detail={"codigo": exc.code, "mensaje": str(exc)}) from exc
+
+
+@app.get("/api/v1/research/nfl/depth-charts", tags=["Investigación NFL"])
+def research_nfl_depth_charts(
+    season: int | None = Query(default=None, ge=2001, le=2100),
+    limit: int = Query(default=1000, ge=1, le=5000),
+):
+    selected_season = season or (datetime.now(EL_SALVADOR_TZ).year if datetime.now(EL_SALVADOR_TZ).month >= 3 else datetime.now(EL_SALVADOR_TZ).year - 1)
+    try:
+        return nfl_depth_charts(selected_season, limit=limit)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except NFLResearchError as exc:
+        raise HTTPException(status_code=exc.status_code, detail={"codigo": exc.code, "mensaje": str(exc)}) from exc
+
+
+@app.get("/api/v1/research/mlb/status", tags=["Investigación MLB"])
+def research_mlb_status():
+    return mlb_status()
+
+
+@app.get("/api/v1/research/mlb/statcast", tags=["Investigación MLB"])
+def research_mlb_statcast(
+    start_date: date = Query(..., description="Fecha inicial YYYY-MM-DD"),
+    end_date: date = Query(..., description="Fecha final YYYY-MM-DD"),
+    batter_id: int | None = Query(default=None, ge=1),
+    pitcher_id: int | None = Query(default=None, ge=1),
+    limit: int = Query(default=2000, ge=1, le=5000),
+):
+    try:
+        return mlb_statcast(
+            start_date.isoformat(), end_date.isoformat(),
+            batter_id=batter_id, pitcher_id=pitcher_id, limit=limit,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except MLBResearchError as exc:
         raise HTTPException(status_code=exc.status_code, detail={"codigo": exc.code, "mensaje": str(exc)}) from exc
 
 
