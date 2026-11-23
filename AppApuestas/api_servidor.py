@@ -38,6 +38,8 @@ from nfl_research import (
     NFLResearchError, nfl_status, schedules as nfl_schedules,
     play_by_play as nfl_play_by_play, weekly_rosters as nfl_weekly_rosters,
     injuries as nfl_injuries, depth_charts as nfl_depth_charts,
+    statistics as nfl_statistics, snap_counts as nfl_snap_counts,
+    nextgen_stats as nfl_nextgen_stats, pfr_advanced_stats as nfl_pfr_advanced_stats,
 )
 from mlb_research import MLBResearchError, mlb_status, statcast as mlb_statcast
 from research_storage import ResearchStorage, ResearchStorageError
@@ -740,6 +742,67 @@ def research_nfl_rosters(
     selected_season = season or (datetime.now(EL_SALVADOR_TZ).year if datetime.now(EL_SALVADOR_TZ).month >= 3 else datetime.now(EL_SALVADOR_TZ).year - 1)
     try:
         return nfl_weekly_rosters(selected_season, week=week, limit=limit)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except NFLResearchError as exc:
+        raise HTTPException(status_code=exc.status_code, detail={"codigo": exc.code, "mensaje": str(exc)}) from exc
+
+
+@app.get("/api/v1/research/nfl/statistics", tags=["Investigación NFL"])
+def research_nfl_statistics(
+    season: int | None = Query(default=None, ge=1999, le=2100),
+    entity: str = Query(default="player", pattern="^(player|team)$"),
+    summary_level: str = Query(default="week", pattern="^(week|reg|post|reg\\+post)$"),
+    limit: int = Query(default=2000, ge=1, le=10000),
+):
+    selected_season = season or (datetime.now(EL_SALVADOR_TZ).year if datetime.now(EL_SALVADOR_TZ).month >= 9 else datetime.now(EL_SALVADOR_TZ).year - 1)
+    try:
+        return nfl_statistics(selected_season, entity=entity, summary_level=summary_level, limit=limit)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except NFLResearchError as exc:
+        raise HTTPException(status_code=exc.status_code, detail={"codigo": exc.code, "mensaje": str(exc)}) from exc
+
+
+@app.get("/api/v1/research/nfl/snap-counts", tags=["Investigación NFL"])
+def research_nfl_snap_counts(
+    season: int | None = Query(default=None, ge=2012, le=2100),
+    limit: int = Query(default=2000, ge=1, le=10000),
+):
+    selected_season = season or (datetime.now(EL_SALVADOR_TZ).year if datetime.now(EL_SALVADOR_TZ).month >= 9 else datetime.now(EL_SALVADOR_TZ).year - 1)
+    try:
+        return nfl_snap_counts(selected_season, limit=limit)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except NFLResearchError as exc:
+        raise HTTPException(status_code=exc.status_code, detail={"codigo": exc.code, "mensaje": str(exc)}) from exc
+
+
+@app.get("/api/v1/research/nfl/nextgen-stats", tags=["Investigación NFL"])
+def research_nfl_nextgen_stats(
+    season: int | None = Query(default=None, ge=2016, le=2100),
+    stat_type: str = Query(default="passing", pattern="^(passing|receiving|rushing)$"),
+    limit: int = Query(default=2000, ge=1, le=10000),
+):
+    selected_season = season or (datetime.now(EL_SALVADOR_TZ).year if datetime.now(EL_SALVADOR_TZ).month >= 9 else datetime.now(EL_SALVADOR_TZ).year - 1)
+    try:
+        return nfl_nextgen_stats(selected_season, stat_type=stat_type, limit=limit)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except NFLResearchError as exc:
+        raise HTTPException(status_code=exc.status_code, detail={"codigo": exc.code, "mensaje": str(exc)}) from exc
+
+
+@app.get("/api/v1/research/nfl/pfr-advanced", tags=["Investigación NFL"])
+def research_nfl_pfr_advanced(
+    season: int | None = Query(default=None, ge=2018, le=2100),
+    stat_type: str = Query(default="pass", pattern="^(pass|rush|rec|def)$"),
+    summary_level: str = Query(default="week", pattern="^(week|season)$"),
+    limit: int = Query(default=2000, ge=1, le=10000),
+):
+    selected_season = season or (datetime.now(EL_SALVADOR_TZ).year if datetime.now(EL_SALVADOR_TZ).month >= 9 else datetime.now(EL_SALVADOR_TZ).year - 1)
+    try:
+        return nfl_pfr_advanced_stats(selected_season, stat_type=stat_type, summary_level=summary_level, limit=limit)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except NFLResearchError as exc:
